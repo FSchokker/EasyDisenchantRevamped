@@ -1,4 +1,4 @@
-== EasyDisenchant2 ==
+== Easy Disenchant Revamped ==
 
 This project is open-source and forked from the original project on GitHub here: https://github.com/Kruithne/EasyDisenchant
 
