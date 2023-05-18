@@ -1,4 +1,4 @@
-## Interface: 100005
+## Interface: 100100
 ## Title: Easy Disenchant Revamped
 ## Notes: Quality-of-life addon for disenchanting.
 ## Author: FHeerdink
