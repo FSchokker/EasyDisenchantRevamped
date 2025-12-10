@@ -312,16 +312,16 @@ do
 				local item = C_Container.GetContainerItemInfo(bagID, slotID);
 	
 				-- Skip non-existant items or legendary+.
-				if item ~= nul and item.hyperlink ~= nil and (item.quality ~= nil and item.quality < 5 and item.quality > 1) then
-					local itemID, itemType, itemSubType = C_Item.GetItemInfoInstant(item.hyperlink);
+				if item ~= nil and item.hyperlink ~= nil and (item.quality ~= nil and item.quality < 5 and item.quality > 1) then
+					local itemID, itemType, itemSubType, _, _, classID, subClassID = C_Item.GetItemInfoInstant(item.hyperlink);
 
 					-- Avoid breaking on M+ keys
 					if itemSubType ~= nil then
 						-- Check Blacklist
 						
 						if not self:IsBlacklisted(itemID) and self:IsItemInOutfit(bagID, slotID, itemID) == false then
-							-- Only disenchant weapons and armour.
-							if itemType == WEAPON or itemType == ARMOR then
+							-- Only disenchant weapons (2) and armour (4) and profession tools (19).
+							if classID == Enum.ItemClass.Weapon or classID == Enum.ItemClass.Armor or classID == Enum.ItemClass.Profession then
 								local button = self:GetItemButton(useButton);
 							
 								SetItemButtonTexture(button, item.iconFileID);
