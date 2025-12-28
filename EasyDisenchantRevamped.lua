@@ -302,7 +302,7 @@ do
 			buttons[i]:Hide();
 		end
 
-		local disenchantName = GetSpellInfo(13262);		
+		local disenchantName = C_Spell.GetSpellInfo(13262).name;
 		local macroFormat = "/stopmacro [combat][btn:2]\n/stopcasting\n/cast %s\n/cast %s %s";	
 		self:ResetEquipmentManagerCache();
 
@@ -312,17 +312,16 @@ do
 				local item = C_Container.GetContainerItemInfo(bagID, slotID);
 	
 				-- Skip non-existant items or legendary+.
-				if item ~= nul and item.hyperlink ~= nil and (item.quality ~= nil and item.quality < 5 and item.quality > 1) then
-					local itemName, _, _, _, _, itemClass, itemSubClass = GetItemInfo(item.hyperlink);
+				if item ~= nil and item.hyperlink ~= nil and (item.quality ~= nil and item.quality < 5 and item.quality > 1) then
+					local itemID, itemType, itemSubType, _, _, classID, subClassID = C_Item.GetItemInfoInstant(item.hyperlink);
 
 					-- Avoid breaking on M+ keys
-					if itemSubClass ~= nil then
+					if itemSubType ~= nil then
 						-- Check Blacklist
-						local itemID = item.itemID;
 						
 						if not self:IsBlacklisted(itemID) and self:IsItemInOutfit(bagID, slotID, itemID) == false then
-							-- Only disenchant weapons and armour.
-							if itemClass == WEAPON or itemClass == ARMOR or itemSubClass:find(ITEM_QUALITY6_DESC) then
+							-- Only disenchant weapons (2) and armour (4) and profession tools (19).
+							if classID == Enum.ItemClass.Weapon or classID == Enum.ItemClass.Armor or classID == Enum.ItemClass.Profession then
 								local button = self:GetItemButton(useButton);
 							
 								SetItemButtonTexture(button, item.iconFileID);
@@ -334,8 +333,6 @@ do
 						
 								button.link = item.hyperlink;
 								button.itemID = itemID;
-								-- button.bagID = bagID;
-								-- button.slotID = slotID;
 								
 								button:Show();
 								if useButton == self.maxButtons then
@@ -543,7 +540,7 @@ do
 		self.blacklist = EasyDisenchantBlacklist;
 
 		-- Hook to TradeSkillFrame.
-		if not self.isTradeSkillFrameHooked and IsAddOnLoaded("Blizzard_TradeSkillUI") then
+		if not self.isTradeSkillFrameHooked and C_AddOns.IsAddOnLoaded("Blizzard_TradeSkillUI") then
 			self:HookTradeSkillFrame();
 		end
 	end
