@@ -226,6 +226,7 @@ do
 		
 		button:HookScript("OnClick", cache.func_clickHook);
 		button:RegisterForClicks("LeftButtonDown", "RightButtonDown");
+		button:SetAttribute("useOnKeyDown", true);
 		
 		buttons[#buttons + 1] = button;
 		return button;
@@ -497,6 +498,7 @@ do
 				OnHide = function() PlaySound(SOUNDKIT.UI_ETHEREAL_WINDOW_CLOSE); end
 			}
 		});
+		table.insert(UISpecialFrames, self.disenchantFrame:GetName());
 	end
 
 	_M.OpenWindow = function(self)
