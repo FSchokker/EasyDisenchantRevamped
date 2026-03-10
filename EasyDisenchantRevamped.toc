@@ -1,9 +1,9 @@
-## Interface: 110207
+## Interface: 120001
 ## Title: Easy Disenchant Revamped
 ## Notes: Quality-of-life addon for disenchanting.
 ## Author: FHeerdink
 ## Version: 1.0.0
-## SavedVariables:EasyDisenchantBlacklist
+## SavedVariables:EasyDisenchantBlacklist,EasyDisenchantRevampedSettings
 Krutilities.lua
 EasyDisenchantRevamped.lua
 Localization/Strings.lua

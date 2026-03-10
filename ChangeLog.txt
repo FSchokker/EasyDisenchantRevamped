@@ -1,0 +1,15 @@
+- Updated TOC to 120001
+- Removed code for button in Enchanting profession window (wasn't working)
+- Refactored "_M.UpdateItems" to reflect Modern design.
+	* Cleaned up nested logic.
+	* Separated validation steps so eligibility is easier to follow.
+	* Kept the current weapon/armor + equippable filtering behavior.
+	* Preserved the button creation and secure macro behavior.
+- Main Addon Window changes
+	* Made the window movable
+	* Saved the position when dragging stops.
+	* Restores ssaved position after creation.
+	* Registers the frame for closing with the Escape key.
+	* Clamps the frame to the screen.
+	* Implemented dynamic height; Reduced default overall height of frame
+	* Items now exist in a scrolling list
