@@ -1,0 +1,18 @@
+lightweight tag 691ce20aae2d532e1471771f80a4488ebbc1c0fe 1.0.1
+Author:	GitHub <noreply@github.com>
+Date:	Wed Feb 1 19:31:32 2023 +0100
+
+commit 691ce20aae2d532e1471771f80a4488ebbc1c0fe
+Author: Franke <frankeheerdink@gmail.com>
+Date:   Wed Feb 1 19:31:32 2023 +0100
+
+    Update to 10.0.5 version
+
+commit 8a671e9caebcfa87c12f86f995df4d3e3a2b14eb
+Author: Franke Heerdink <frankeheerdink@gmail.com>
+Date:   Sun Nov 27 14:22:48 2022 +0100
+
+    Update readme.md
+    
+    The add-on name was still from before the requested namechange
+
