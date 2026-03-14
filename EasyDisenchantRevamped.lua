@@ -361,22 +361,26 @@ do
 	end
 
 	_M.ScanEquipmentManager = function(self)
+        local ITEM_INVENTORY_BAG_OFFSET = 4096;
 		local numOutfits = C_EquipmentSet.GetNumEquipmentSets();
 		local equipmentCache = {};
 
 		-- Equipment sets appear to be zero-index since 8.0?
 		for index = 0, numOutfits - 1 do
-			local _, _, setID = C_EquipmentSet.GetEquipmentSetInfo(index);
+			local setName, _, setID = C_EquipmentSet.GetEquipmentSetInfo(index);
 			if setID ~= nil then
-				local itemLocations = C_EquipmentSet.GetItemLocations(setID);		
-				for slotIndex, itemLocation in pairs(itemLocations) do
-					local isInBags = (bit.band(itemLocation, ITEM_INVENTORY_LOCATION_BAGS) ~= 0);
+				local locations = C_EquipmentSet.GetItemLocations(setID);
+				for slotIndex, location in pairs(locations) do
+                    local isInBags = (bit.band(location, ITEM_INVENTORY_LOCATION_BAGS) ~= 0);
 					if isInBags then
-						local _, _, _, _, itemSlotIndex, itemBagIndex = EquipmentManager_UnpackLocation(itemLocation);
+                        location = location - ITEM_INVENTORY_LOCATION_BAGS;
+                        local bag = bit.rshift(location, ITEM_INVENTORY_BAG_BIT_OFFSET);
+                        local slot = location - bit.lshift(bag, ITEM_INVENTORY_BAG_BIT_OFFSET);
+                        bag = bag - ITEM_INVENTORY_BAG_OFFSET;
 
-						if itemSlotIndex ~= nil and itemBagIndex ~= nil then						
-							local itemID = C_Container.GetContainerItemID(itemBagIndex, itemSlotIndex);
-							equipmentCache[table.concat({itemBagIndex, itemSlotIndex, itemID}, "-")] = true;
+						if bag ~= nil and slot ~= nil then
+							local itemID = C_Container.GetContainerItemID(bag, slot);
+							equipmentCache[table.concat({bag, slot, itemID}, "-")] = true;
 						end
 					end
 				end
@@ -500,9 +504,10 @@ do
 							if not isBlacklisted and not isInOutfit then
 								local isWeapon = (classID == Enum.ItemClass.Weapon);
 								local isArmor = (classID == Enum.ItemClass.Armor);
+								local isProfessionItem = (classID == Enum.ItemClass.Profession);
 								local isEquippable = (itemEquipLoc ~= nil and itemEquipLoc ~= "");
 
-								if isEquippable and (isWeapon or isArmor) then
+								if isEquippable and (isWeapon or isArmor or isProfessionItem) then
 									local button = self:GetItemButton(useButton);
 
 									SetItemButtonTexture(button, item.iconFileID);
