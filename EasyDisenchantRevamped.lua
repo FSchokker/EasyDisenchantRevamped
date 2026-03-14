@@ -355,6 +355,7 @@ do
 		
 		button:HookScript("OnClick", cache.func_clickHook);
 		button:RegisterForClicks("LeftButtonDown", "RightButtonDown");
+		button:SetAttribute("useOnKeyDown", true);
 		
 		buttons[#buttons + 1] = button;
 		return button;
@@ -967,121 +968,7 @@ do
 				end
 			}
 		});
-
-		self.disenchantFrame:SetMovable(true);
-		self.disenchantFrame:SetClampedToScreen(true);
-
-		-- Create tab buttons.
-		self.disenchantFrame.disenchantTabButton = CreateFrame("Button", "$parentDisenchantTabButton", self.disenchantFrame, "PanelTopTabButtonTemplate");
-		self.disenchantFrame.disenchantTabButton:SetID(1)
-		self.disenchantFrame.disenchantTabButton:SetText("Disenchant");
-		PanelTemplates_TabResize(self.disenchantFrame.disenchantTabButton, 20);
-		self.disenchantFrame.disenchantTabButton:SetPoint("TOPLEFT", self.disenchantFrame, "TOPLEFT", 24, -56);
-		self.disenchantFrame.disenchantTabButton:SetScript("OnClick", function()
-			_M:SetActiveTab("DISENCHANT");
-		end);
-
-		self.disenchantFrame.blacklistTabButton = CreateFrame("Button", "$parentBlacklistTabButton", self.disenchantFrame, "PanelTopTabButtonTemplate");
-		self.disenchantFrame.disenchantTabButton:SetID(2)
-		self.disenchantFrame.blacklistTabButton:SetText("Blacklist");
-		PanelTemplates_TabResize(self.disenchantFrame.blacklistTabButton, 20);
-		self.disenchantFrame.blacklistTabButton:SetPoint("TOPLEFT", self.disenchantFrame.disenchantTabButton, "TOPRIGHT", 8, 0);
-		self.disenchantFrame.blacklistTabButton:SetScript("OnClick", function()
-			_M:SetActiveTab("BLACKLIST");
-		end);
-
-		-- Create both content regions up front.
-		self.disenchantFrame.disenchantContent = CreateFrame("FRAME", "$parentDisenchantContent", self.disenchantFrame);
-		self.disenchantFrame.disenchantContent:SetPoint("TOPLEFT", self.disenchantFrame, "TOPLEFT", 18, -100);
-		self.disenchantFrame.disenchantContent:SetPoint("BOTTOMRIGHT", self.disenchantFrame, "BOTTOMRIGHT", -18, 52);
-
-		self.disenchantFrame.blacklistContent = CreateFrame("FRAME", "$parentBlacklistContent", self.disenchantFrame);
-		self.disenchantFrame.blacklistContent:SetPoint("TOPLEFT", self.disenchantFrame, "TOPLEFT", 18, -100);
-		self.disenchantFrame.blacklistContent:SetPoint("BOTTOMRIGHT", self.disenchantFrame, "BOTTOMRIGHT", -18, 52);
-		self.disenchantFrame.blacklistContent:Hide();
-
-		-- Divider line under tabs
-		self.disenchantFrame.tabDivider = self.disenchantFrame:CreateTexture(nil, "ARTWORK");
-		self.disenchantFrame.tabDivider:SetColorTexture(1, 1, 1, 0.10);
-		self.disenchantFrame.tabDivider:SetHeight(2);
-		self.disenchantFrame.tabDivider:SetPoint("TOPLEFT", self.disenchantFrame.disenchantContent, "TOPLEFT", 4, 12);
-		self.disenchantFrame.tabDivider:SetPoint("TOPRIGHT", self.disenchantFrame.disenchantContent, "TOPRIGHT", -10, 12);
-
-		-- Divider line above help text
-		self.disenchantFrame.bottomDivider = self.disenchantFrame:CreateTexture(nil, "ARTWORK");
-		self.disenchantFrame.bottomDivider:SetColorTexture(1, 1, 1, 0.10);
-		self.disenchantFrame.bottomDivider:SetHeight(2);
-		self.disenchantFrame.bottomDivider:SetPoint("BOTTOMLEFT", self.disenchantFrame.disenchantContent, "BOTTOMLEFT", 10, -6);
-		self.disenchantFrame.bottomDivider:SetPoint("BOTTOMRIGHT", self.disenchantFrame.disenchantContent, "BOTTOMRIGHT", -10, -6);
-
-		-- Blacklist content header.
-		self.disenchantFrame.blacklistHeader = self.disenchantFrame.blacklistContent:CreateFontString(nil, "ARTWORK", "GameFontHighlightMedium");
-		self.disenchantFrame.blacklistHeader:SetPoint("TOPLEFT", self.disenchantFrame.blacklistContent, "TOPLEFT", 20, -10);
-		self.disenchantFrame.blacklistHeader:SetText("Blacklisted Items (0)");
-
-		-- Blacklist empty-state message.
-		self.disenchantFrame.blacklistEmptyText = self.disenchantFrame.blacklistContent:CreateFontString(nil, "ARTWORK", "GameFontHighlight");
-		self.disenchantFrame.blacklistEmptyText:SetPoint("CENTER", self.disenchantFrame.blacklistContent, "CENTER", 0, 0);
-		self.disenchantFrame.blacklistEmptyText:SetText("No blacklisted items.");
-
-		-- Existing Disenchant tab scroll frame.
-		self.disenchantFrame.scrollFrame = CreateFrame("ScrollFrame", "$parentScrollFrame", self.disenchantFrame.disenchantContent, "UIPanelScrollFrameTemplate");
-		self.disenchantFrame.scrollFrame:SetPoint("TOPLEFT", self.disenchantFrame.disenchantContent, "TOPLEFT", 20, 0);
-		self.disenchantFrame.scrollFrame:SetPoint("BOTTOMRIGHT", self.disenchantFrame.disenchantContent, "BOTTOMRIGHT", -10, 4);
-		self.disenchantFrame.scrollFrame:EnableMouseWheel(true);
-
-		self.disenchantFrame.scrollChild = CreateFrame("FRAME", "$parentScrollChild", self.disenchantFrame.scrollFrame);
-		self.disenchantFrame.scrollChild:SetSize(320, 54 + ((self.minVisibleRows - 1) * self.itemRowHeight));
-		self.disenchantFrame.scrollFrame:SetScrollChild(self.disenchantFrame.scrollChild);
-
-		self.disenchantFrame.scrollFrame:SetScript("OnMouseWheel", function(scrollFrame, delta)
-			local currentScroll = scrollFrame:GetVerticalScroll();
-			local maxScroll = math.max(0, scrollFrame.scrollChild:GetHeight() - scrollFrame:GetHeight());
-			local newScroll = currentScroll - (delta * self.itemRowHeight);
-
-			if newScroll < 0 then
-				newScroll = 0;
-			elseif newScroll > maxScroll then
-				newScroll = maxScroll;
-			end
-
-			scrollFrame:SetVerticalScroll(newScroll);
-		end);
-
-		self.disenchantFrame.scrollFrame.scrollChild = self.disenchantFrame.scrollChild;
-
-		-- ADD THIS BLOCK: Blacklist tab scroll frame
-		self.disenchantFrame.blacklistScrollFrame = CreateFrame("ScrollFrame", "$parentBlacklistScrollFrame", self.disenchantFrame.blacklistContent, "UIPanelScrollFrameTemplate");
-		self.disenchantFrame.blacklistScrollFrame:SetPoint("TOPLEFT", self.disenchantFrame.blacklistContent, "TOPLEFT", 20, -30);
-		self.disenchantFrame.blacklistScrollFrame:SetPoint("BOTTOMRIGHT", self.disenchantFrame.blacklistContent, "BOTTOMRIGHT", -10, 4);
-		self.disenchantFrame.blacklistScrollFrame:EnableMouseWheel(true);
-
-		-- ADD THIS BLOCK: Blacklist tab scroll child
-		self.disenchantFrame.blacklistScrollChild = CreateFrame("FRAME", "$parentBlacklistScrollChild", self.disenchantFrame.blacklistScrollFrame);
-		self.disenchantFrame.blacklistScrollChild:SetSize(320, 1);
-		self.disenchantFrame.blacklistScrollFrame:SetScrollChild(self.disenchantFrame.blacklistScrollChild);
-
-		-- ADD THIS BLOCK: Blacklist mouse wheel behavior
-		self.disenchantFrame.blacklistScrollFrame:SetScript("OnMouseWheel", function(scrollFrame, delta)
-			local currentScroll = scrollFrame:GetVerticalScroll();
-			local maxScroll = math.max(0, scrollFrame.blacklistScrollChild:GetHeight() - scrollFrame:GetHeight());
-			local newScroll = currentScroll - (delta * 28);
-
-			if newScroll < 0 then
-				newScroll = 0;
-			elseif newScroll > maxScroll then
-				newScroll = maxScroll;
-			end
-
-			scrollFrame:SetVerticalScroll(newScroll);
-		end);
-
-		-- ADD THIS LINE: make the child available to the mouse wheel function
-		self.disenchantFrame.blacklistScrollFrame.blacklistScrollChild = self.disenchantFrame.blacklistScrollChild;
-
-		self:RestoreWindowPosition();
-		self:RegisterEscapeFrame();
-		self:SetActiveTab("DISENCHANT");
+		table.insert(UISpecialFrames, self.disenchantFrame:GetName());
 	end
 
 	_M.OpenWindow = function(self)
