@@ -8,4 +8,4 @@ This add-on provides a quality-of-life interface for disenchanting items. To acc
 
 * **Developer**: FSchokker
 * **Contributors**: Malitor
-* **Original Developers/Contributors**: Kruithne, MarkWisselink, robgha01.
+* **Original Developers/Contributors**: Kruithne, Numy, robgha01.

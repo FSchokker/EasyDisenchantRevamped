@@ -1,8 +1,8 @@
-## Interface: 110207
+## Interface: 120000
 ## Title: Easy Disenchant Revamped
 ## Notes: Quality-of-life addon for disenchanting.
 ## Author: FHeerdink
-## Version: 1.0.0
+## Version: 1.1.1
 ## SavedVariables:EasyDisenchantBlacklist
 Krutilities.lua
 EasyDisenchantRevamped.lua
@@ -16,6 +16,6 @@ Localization/Strings_ruRU.lua
 Localization/Strings_zhCN.lua
 Localization/Strings_zhTW.lua
 
-## X-Contributors: Kruithne, MarkWisselink, robgha01
+## X-Contributors: Kruithne, Numy, robgha01
 ## X-GitHub-Repo: FHeerdink/EasyDisenchantRevamped
 ## X-Curse-Project-ID: easydisenchantrevamped
