@@ -35,8 +35,8 @@ do
 		minFrameHeight = 350,
 		maxFrameHeight = 650,
 		itemRowHeight = 38,
-		itemsPerRow = 9,		
-		
+		itemsPerRow = 9,
+
 		buttonRenderingCache = {}
 	};
 
@@ -136,7 +136,7 @@ do
 			end
 		end
 	end
-	
+
 	_M.GetBlacklistEntry = function(self, itemID)
 		-- NEW:
 		-- 1. Returns the rich blacklist entry for an itemID.
@@ -234,7 +234,7 @@ do
 
 		return entries;
 	end
-	
+
 	_M.ResetBlacklist = function(self)
 		self.blacklist = {};
 		EasyDisenchantBlacklist = self.blacklist;
@@ -352,10 +352,11 @@ do
 
 		local cache = self:GetItemButtonRenderingCache();
 		local button = _K:Frame(cache.factory(index));
-		
+
 		button:HookScript("OnClick", cache.func_clickHook);
 		button:RegisterForClicks("LeftButtonDown", "RightButtonDown");
-		
+		button:SetAttribute("useOnKeyDown", true);
+
 		buttons[#buttons + 1] = button;
 		return button;
 	end
@@ -369,21 +370,23 @@ do
 		for index = 0, numOutfits - 1 do
 			local setName, _, setID = C_EquipmentSet.GetEquipmentSetInfo(index);
 			if setID ~= nil then
-				local locations = C_EquipmentSet.GetItemLocations(setID);
-				for slotIndex, location in pairs(locations) do
+                local locations = C_EquipmentSet.GetItemLocations(setID);
+                for slotIndex, location in pairs(locations) do
                     local isInBags = (bit.band(location, ITEM_INVENTORY_LOCATION_BAGS) ~= 0);
-					if isInBags then
-                        location = location - ITEM_INVENTORY_LOCATION_BAGS;
-                        local bag = bit.rshift(location, ITEM_INVENTORY_BAG_BIT_OFFSET);
-                        local slot = location - bit.lshift(bag, ITEM_INVENTORY_BAG_BIT_OFFSET);
+                    if isInBags and location > 0 then
+                        print('loc:' .. location);
+                        local slotLocation = location;
+                        slotLocation = slotLocation - ITEM_INVENTORY_LOCATION_BAGS;
+                        local bag = bit.rshift(slotLocation, ITEM_INVENTORY_BAG_BIT_OFFSET);
+                        local slot = slotLocation - bit.lshift(bag, ITEM_INVENTORY_BAG_BIT_OFFSET);
                         bag = bag - ITEM_INVENTORY_BAG_OFFSET;
 
-						if bag ~= nil and slot ~= nil then
-							local itemID = C_Container.GetContainerItemID(bag, slot);
-							equipmentCache[table.concat({bag, slot, itemID}, "-")] = true;
-						end
-					end
-				end
+                        if bag ~= nil and slot ~= nil then
+                            local itemID = C_Container.GetContainerItemID(bag, slot);
+                            equipmentCache[table.concat({bag, slot, itemID}, "-")] = true;
+                        end
+                    end
+                end
 			else
 				self:Print(self.BROKEN_ITEM_SET);
 			end
@@ -537,7 +540,7 @@ do
 
 		self:UpdateWindowHeight(useButton);
 	end
-	
+
 	_M.SaveWindowPosition = function(self)
 		-- Saves the current frame anchor into saved variables.
 
@@ -589,7 +592,7 @@ do
 		end
 
 		tinsert(UISpecialFrames, self.disenchantFrame:GetName());
-	end	
+	end
 
 	_M.UpdateBlacklistHeader = function(self)
 		-- NEW:
@@ -1107,7 +1110,7 @@ do
 
 		PlaySound(SOUNDKIT.UI_ETHEREAL_WINDOW_OPEN);
 	end
-	
+
 	_M.OnCommand = function(msg)
 		msg = strlower(msg);
 
@@ -1138,7 +1141,7 @@ do
 			self:OnLoad();
 		end
 	end
-	
+
 	_M.InvokeWindowOpen = function()
 		_M:OpenWindow();
 	end
