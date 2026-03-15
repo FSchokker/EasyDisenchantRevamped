@@ -374,7 +374,6 @@ do
                 for slotIndex, location in pairs(locations) do
                     local isInBags = (bit.band(location, ITEM_INVENTORY_LOCATION_BAGS) ~= 0);
                     if isInBags and location > 0 then
-                        print('loc:' .. location);
                         local slotLocation = location;
                         slotLocation = slotLocation - ITEM_INVENTORY_LOCATION_BAGS;
                         local bag = bit.rshift(slotLocation, ITEM_INVENTORY_BAG_BIT_OFFSET);
