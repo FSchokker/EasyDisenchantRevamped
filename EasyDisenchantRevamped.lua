@@ -27,6 +27,13 @@ do
 		eventMap = {}, -- Used for internal mapping of events.
 		-- Tab System
 		currentTab = "DISENCHANT",
+		disenchantViewMode = "BUTTONS",
+		disenchantListRows = {},
+		pendingDisenchantBagID = nil,
+		pendingDisenchantSlotID = nil,
+		pendingDisenchantItemID = nil,
+		pendingDisenchantCastStartTimeMS = nil,
+		pendingDisenchantCastEndTimeMS = nil,
 		blacklistRows = {},
 		-- Disenchant Tab Scroll FRAME
 		maxButtons = 89,
@@ -46,6 +53,97 @@ do
 	-- Set table __index call to pass-through strings.
 	setmetatable(_M, { __index = function(t, k) return t.Strings[k]; end });
 
+	_M.UpdateMinimapButtonPosition = function(self)
+	-- Positions the minimap button based on the saved angle.
+
+	if not self.minimapButton then
+		return;
+	end
+
+	local angle = self.settings.minimapButtonAngle or 225;
+	local radius = 80;
+
+	local x = math.cos(math.rad(angle)) * radius;
+	local y = math.sin(math.rad(angle)) * radius;
+
+	self.minimapButton:ClearAllPoints();
+	self.minimapButton:SetPoint("CENTER", Minimap, "CENTER", x, y);
+end
+
+	_M.CreateMinimapButton = function(self)
+		-- Creates a draggable minimap button that:
+		-- 1. Left-click opens the addon window.
+		-- 2. Right-drag moves it around the minimap.
+		-- 3. Shows a tooltip on hover.
+
+		if self.minimapButton then
+			return;
+		end
+
+		local button = CreateFrame("Button", "EasyDisenchantRevampedMinimapButton", Minimap);
+		button:SetSize(32, 32);
+		button:SetFrameStrata("MEDIUM");
+		button:SetMovable(true);
+		button:RegisterForClicks("LeftButtonUp", "RightButtonUp");
+		button:RegisterForDrag("RightButton");
+
+		button:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight");
+
+		button.border = button:CreateTexture(nil, "OVERLAY");
+		button.border:SetSize(53, 53);
+		button.border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder");
+		button.border:SetPoint("TOPLEFT");
+
+		button.icon = button:CreateTexture(nil, "BACKGROUND");
+		button.icon:SetSize(20, 20);
+		button.icon:SetPoint("CENTER", 0, 0);
+		button.icon:SetTexture("Interface\\AddOns\\EasyDisenchantRevamped\\Media\\icon_MiniMap_x32"); -- REPLACE this with your real icon path later
+
+		button:SetScript("OnClick", function(_, mouseButton)
+			if mouseButton == "LeftButton" then
+				_M:OpenWindow();
+			end
+		end);
+
+		button:SetScript("OnDragStart", function(self)
+			self:SetScript("OnUpdate", function()
+				local mx, my = Minimap:GetCenter();
+				local px, py = GetCursorPosition();
+				local scale = UIParent:GetEffectiveScale();
+
+				px = px / scale;
+				py = py / scale;
+
+				local angle = math.deg(math.atan2(py - my, px - mx));
+				if angle < 0 then
+					angle = angle + 360;
+				end
+
+				_M.settings.minimapButtonAngle = angle;
+				_M:UpdateMinimapButtonPosition();
+			end);
+		end);
+
+		button:SetScript("OnDragStop", function(self)
+			self:SetScript("OnUpdate", nil);
+		end);
+
+		button:SetScript("OnEnter", function(self)
+			GameTooltip:SetOwner(self, "ANCHOR_LEFT");
+			GameTooltip:SetText("Easy Disenchant Revamped");
+			GameTooltip:AddLine("Left-click: Open window", 1, 1, 1);
+			GameTooltip:AddLine("Right-drag: Move button", 1, 1, 1);
+			GameTooltip:Show();
+		end);
+
+		button:SetScript("OnLeave", function()
+			GameTooltip:Hide();
+		end);
+
+		self.minimapButton = button;
+		self:UpdateMinimapButtonPosition();
+	end
+
 	_M.ApplyLocalization = function(self, locale)
 		local strings = self.Strings;
 		for key, str in pairs(locale) do
@@ -58,8 +156,6 @@ do
 	end
 
 	_M.IsBlacklisted = function(self, itemID)
-		-- REPLACE your entire IsBlacklisted() function with this version.
-		-- Changes:
 		-- 1. Supports the new rich blacklist entry format.
 		-- 2. Still works during migration from old boolean entries.
 
@@ -67,8 +163,6 @@ do
 	end
 
 	_M.BlacklistItem = function(self, itemID, itemLink)
-		-- REPLACE your entire BlacklistItem() function with this version.
-		-- Changes:
 		-- 1. Stores a rich blacklist entry instead of just true.
 		-- 2. Adds timeAdded for sorting newest first later.
 		-- 3. Keeps the existing last-blacklisted tracking and chat messages.
@@ -92,12 +186,12 @@ do
 	end
 
 	_M.OnLoad = function(self)
-		-- REPLACE your entire OnLoad() function with this version.
 		-- Changes:
 		-- 1. Keeps slash command setup.
 		-- 2. Initializes blacklist/settings saved variables.
 		-- 3. Migrates old blacklist entries from itemID = true to rich entry tables.
-		-- 4. Initializes settings saved variables for window position.
+		-- 4. Initializes minimap button settings.
+		-- 5. Creates the minimap button.
 
 		-- Register command.
 		SLASH_DISENCHANT1, SLASH_DISENCHANT2 = "/disenchant", "/de";
@@ -117,149 +211,16 @@ do
 		self.blacklist = EasyDisenchantBlacklist;
 		self.settings = EasyDisenchantRevampedSettings;
 
-		-- Migrate old blacklist format:
-		-- old:  self.blacklist[itemID] = true
-		-- new:  self.blacklist[itemID] = { itemID=..., itemLink=..., itemName=..., iconFileID=..., quality=..., timeAdded=... }
-		for itemID, entry in pairs(self.blacklist) do
-			if entry == true then
-				local itemLink = select(2, GetItemInfo(itemID));
-				local itemName, _, itemQuality, _, _, _, _, _, _, itemIcon = GetItemInfo(itemID);
-
-				self.blacklist[itemID] = {
-					itemID = itemID,
-					itemLink = itemLink,
-					itemName = itemName or ("Item ID: " .. itemID),
-					iconFileID = itemIcon,
-					quality = itemQuality,
-					timeAdded = 0, -- migrated entries sort below real dated entries
-				};
-			end
-		end
-	end
-
-	_M.GetBlacklistEntry = function(self, itemID)
-		-- NEW:
-		-- 1. Returns the rich blacklist entry for an itemID.
-		-- 2. Safely handles missing entries.
-
-		return self.blacklist[itemID];
-	end
-
-	_M.RefreshBlacklistEntry = function(self, itemID)
-		-- NEW:
-		-- 1. Optionally refreshes display snapshot fields if better item data is available.
-		-- 2. Preserves timeAdded.
-		-- 3. Keeps existing saved values when fresh item data is unavailable.
-
-		local entry = self.blacklist[itemID];
-		if not entry then
-			return nil;
+		-- Default minimap button settings.
+		if self.settings.minimapButtonAngle == nil then
+			self.settings.minimapButtonAngle = 225;
 		end
 
-		local itemName, itemLink, itemQuality, _, _, _, _, _, _, itemIcon = GetItemInfo(itemID);
-
-		if itemName then
-			entry.itemName = itemName;
+		if self.settings.disenchantViewMode == nil then
+			self.settings.disenchantViewMode = "BUTTONS";
 		end
 
-		if itemLink then
-			entry.itemLink = itemLink;
-		end
-
-		if itemQuality ~= nil then
-			entry.quality = itemQuality;
-		end
-
-		if itemIcon then
-			entry.iconFileID = itemIcon;
-		end
-
-		if entry.timeAdded == nil then
-			entry.timeAdded = 0;
-		end
-
-		return entry;
-	end
-
-	_M.GetBlacklistCount = function(self)
-		-- NEW:
-		-- 1. Returns the total number of blacklisted item entries.
-
-		local count = 0;
-
-		for itemID, entry in pairs(self.blacklist) do
-			if entry ~= nil then
-				count = count + 1;
-			end
-		end
-
-		return count;
-	end
-
-	_M.GetSortedBlacklistEntries = function(self)
-		-- NEW:
-		-- 1. Builds an array of blacklist entries from the saved dictionary.
-		-- 2. Refreshes display snapshot data when possible.
-		-- 3. Sorts by timeAdded (newest first), then itemName, then itemID.
-
-		local entries = {};
-
-		for itemID, entry in pairs(self.blacklist) do
-			if entry ~= nil then
-				entry = self:RefreshBlacklistEntry(itemID) or entry;
-				entries[#entries + 1] = entry;
-			end
-		end
-
-		table.sort(entries, function(a, b)
-			local aTimeAdded = a.timeAdded or 0;
-			local bTimeAdded = b.timeAdded or 0;
-
-			if aTimeAdded ~= bTimeAdded then
-				return aTimeAdded > bTimeAdded;
-			end
-
-			local aName = a.itemName or "";
-			local bName = b.itemName or "";
-
-			if aName ~= bName then
-				return aName < bName;
-			end
-
-			local aItemID = a.itemID or 0;
-			local bItemID = b.itemID or 0;
-
-			return aItemID < bItemID;
-		end);
-
-		return entries;
-	end
-
-	_M.OnLoad = function(self)
-		-- REPLACE your entire OnLoad() function with this version.
-		-- Changes:
-		-- 1. Keeps slash command setup.
-		-- 2. Initializes blacklist/settings saved variables.
-		-- 3. Migrates old blacklist entries from itemID = true to rich entry tables.
-		-- 4. Initializes settings saved variables for window position.
-
-		-- Register command.
-		SLASH_DISENCHANT1, SLASH_DISENCHANT2 = "/disenchant", "/de";
-		SlashCmdList["DISENCHANT"] = _M.OnCommand;
-
-		-- Create stored blacklist table if it doesn't exist.
-		if not EasyDisenchantBlacklist then
-			EasyDisenchantBlacklist = {};
-		end
-
-		-- Create stored settings table if it doesn't exist.
-		if not EasyDisenchantRevampedSettings then
-			EasyDisenchantRevampedSettings = {};
-		end
-
-		-- Store local references to our saved tables.
-		self.blacklist = EasyDisenchantBlacklist;
-		self.settings = EasyDisenchantRevampedSettings;
+		self.disenchantViewMode = self.settings.disenchantViewMode;
 
 		-- Migrate old blacklist format:
 		-- old:  self.blacklist[itemID] = true
@@ -275,12 +236,20 @@ do
 					itemName = itemName or ("Item ID: " .. itemID),
 					iconFileID = itemIcon,
 					quality = itemQuality,
-					timeAdded = 0, -- migrated entries sort below real dated entries
+					timeAdded = 0,
 				};
 			end
 		end
+
+		self:CreateMinimapButton();
+
+		self:SetEventHandler("UNIT_SPELLCAST_START", _M.OnUnitSpellcastStart);
+		self:SetEventHandler("UNIT_SPELLCAST_SUCCEEDED", _M.OnUnitSpellcastSucceeded);
+		self:SetEventHandler("UNIT_SPELLCAST_FAILED", _M.OnUnitSpellcastFailed);
+		self:SetEventHandler("UNIT_SPELLCAST_INTERRUPTED", _M.OnUnitSpellcastInterrupted);
+		self:SetEventHandler("BAG_UPDATE_DELAYED", _M.OnBagUpdateDelayed);
 	end
-	
+
 	_M.GetBlacklistEntry = function(self, itemID)
 		-- NEW:
 		-- 1. Returns the rich blacklist entry for an itemID.
@@ -413,11 +382,270 @@ do
 		self.eventFrame:UnregisterEvent(event);
 	end
 
+	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	-- Disenchant Helpers
+	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	_M.ClearPendingDisenchant = function(self)
+		-- REPLACE this entire function.
+		-- Changes:
+		-- 1. Clears the pending disenchant tracking fields.
+		-- 2. Clears cast timing used by spinner/progress visuals.
+		-- 3. Stops the pending visual updater.
+
+		self.pendingDisenchantBagID = nil;
+		self.pendingDisenchantSlotID = nil;
+		self.pendingDisenchantItemID = nil;
+		self.pendingDisenchantCastStartTimeMS = nil;
+		self.pendingDisenchantCastEndTimeMS = nil;
+
+		if self.disenchantFrame and self.disenchantFrame.pendingAnimationFrame then
+			self.disenchantFrame.pendingAnimationFrame:Hide();
+		end
+	end
+
+	_M.SetPendingDisenchant = function(self, bagID, slotID, itemID)
+		-- REPLACE this entire function.
+		-- Changes:
+		-- 1. Stores the currently pending disenchant target.
+		-- 2. Clears any old cast timing until UNIT_SPELLCAST_START refreshes it.
+
+		self.pendingDisenchantBagID = bagID;
+		self.pendingDisenchantSlotID = slotID;
+		self.pendingDisenchantItemID = itemID;
+		self.pendingDisenchantCastStartTimeMS = nil;
+		self.pendingDisenchantCastEndTimeMS = nil;
+	end
+
+	_M.SetPendingDisenchantCastWindow = function(self, startTimeMS, endTimeMS)
+		-- ADD this entire function.
+		-- Changes:
+		-- 1. Stores the active cast timing for spinner/progress visuals.
+		-- 2. Starts the visual updater.
+
+		self.pendingDisenchantCastStartTimeMS = startTimeMS;
+		self.pendingDisenchantCastEndTimeMS = endTimeMS;
+
+		if self.disenchantFrame and self.disenchantFrame.pendingAnimationFrame then
+			self.disenchantFrame.pendingAnimationFrame:Show();
+		end
+
+		self:UpdatePendingDisenchantVisuals();
+	end
+
+	_M.IsPendingDisenchant = function(self, bagID, slotID, itemID)
+		-- REPLACE this entire function.
+		-- Changes:
+		-- 1. Returns true when the given item matches the pending disenchant target.
+
+		return self.pendingDisenchantBagID == bagID
+			and self.pendingDisenchantSlotID == slotID
+			and self.pendingDisenchantItemID == itemID;
+	end
+
+	_M.UpdatePendingDisenchantVisuals = function(self)
+		-- ADD this entire function.
+		-- Changes:
+		-- 1. Updates the grid spinner-style cooldown overlay.
+		-- 2. Updates the list row progress bar.
+		-- 3. Hides visuals automatically when no active cast timing exists.
+
+		if not self.disenchantFrame then
+			return;
+		end
+
+		local startTimeMS = self.pendingDisenchantCastStartTimeMS;
+		local endTimeMS = self.pendingDisenchantCastEndTimeMS;
+
+		if not startTimeMS or not endTimeMS or endTimeMS <= startTimeMS then
+			for i = 1, #self.itemButtons do
+				local button = self.itemButtons[i];
+				if button.pendingSpinner then
+					button.pendingSpinner:Hide();
+					button.pendingSpinner:Clear();
+				end
+			end
+
+			for i = 1, #self.disenchantListRows do
+				local row = self.disenchantListRows[i];
+				if row.progressBar then
+					row.progressBar:Hide();
+					row.progressBar:SetValue(0);
+				end
+			end
+
+			if self.disenchantFrame.pendingAnimationFrame then
+				self.disenchantFrame.pendingAnimationFrame:Hide();
+			end
+
+			return;
+		end
+
+		local nowMS = GetTime() * 1000;
+		local durationMS = endTimeMS - startTimeMS;
+		local progress = (nowMS - startTimeMS) / durationMS;
+
+		if progress < 0 then
+			progress = 0;
+		elseif progress > 1 then
+			progress = 1;
+		end
+
+		local cooldownStart = startTimeMS / 1000;
+		local cooldownDuration = durationMS / 1000;
+
+		for i = 1, #self.itemButtons do
+			local button = self.itemButtons[i];
+			if button.pendingSpinner then
+				local isPending = self:IsPendingDisenchant(button.bagID, button.slotID, button.itemID);
+
+				if isPending then
+					button.pendingSpinner:SetCooldown(cooldownStart, cooldownDuration);
+					button.pendingSpinner:Show();
+				else
+					button.pendingSpinner:Hide();
+					button.pendingSpinner:Clear();
+				end
+			end
+		end
+
+		for i = 1, #self.disenchantListRows do
+			local row = self.disenchantListRows[i];
+			if row.progressBar then
+				local isPending = self:IsPendingDisenchant(row.bagID, row.slotID, row.itemID);
+
+				if isPending then
+					row.progressBar:SetValue(progress);
+					row.progressBar:Show();
+				else
+					row.progressBar:SetValue(0);
+					row.progressBar:Hide();
+				end
+			end
+		end
+
+		if progress >= 1 and self.disenchantFrame.pendingAnimationFrame then
+			self.disenchantFrame.pendingAnimationFrame:Hide();
+		end
+	end
+
+	_M.OnUnitSpellcastStart = function(self, unitTarget, castGUID, spellID)
+		-- ADD this entire function.
+		-- Changes:
+		-- 1. Captures Disenchant cast timing from the player.
+		-- 2. Starts spinner/progress visuals in sync with the cast bar.
+
+		if unitTarget ~= "player" then
+			return;
+		end
+
+		if spellID ~= 13262 then
+			return;
+		end
+
+		local _, _, _, startTimeMS, endTimeMS = UnitCastingInfo("player");
+		if startTimeMS and endTimeMS then
+			self:SetPendingDisenchantCastWindow(startTimeMS, endTimeMS);
+		end
+	end
+
+	_M.OnUnitSpellcastSucceeded = function(self, unitTarget, castGUID, spellID)
+		-- REPLACE this entire function.
+		-- Changes:
+		-- 1. Leaves pending state in place until BAG_UPDATE_DELAYED removes the item.
+		-- 2. Prevents early refresh before the inventory actually changes.
+
+		if unitTarget ~= "player" then
+			return;
+		end
+
+		if spellID ~= 13262 then
+			return;
+		end
+	end
+
+	_M.OnUnitSpellcastFailed = function(self, unitTarget, castGUID, spellID)
+		-- REPLACE this entire function.
+		-- Changes:
+		-- 1. Clears pending state if Disenchant fails.
+		-- 2. Refreshes both views immediately.
+
+		if unitTarget ~= "player" then
+			return;
+		end
+
+		if spellID ~= 13262 then
+			return;
+		end
+
+		self:ClearPendingDisenchant();
+		self:UpdateItems();
+	end
+
+	_M.OnUnitSpellcastInterrupted = function(self, unitTarget, castGUID, spellID)
+		-- REPLACE this entire function.
+		-- Changes:
+		-- 1. Clears pending state if Disenchant is interrupted.
+		-- 2. Refreshes both views immediately.
+
+		if unitTarget ~= "player" then
+			return;
+		end
+
+		if spellID ~= 13262 then
+			return;
+		end
+
+		self:ClearPendingDisenchant();
+		self:UpdateItems();
+	end
+
+	_M.OnBagUpdateDelayed = function(self)
+		-- Changes:
+		-- 1. Adds a tiny completion flash.
+		-- 2. Refreshes the item views after a short delay.
+		-- 3. Clears pending state afterward.
+
+		if self.pendingDisenchantItemID == nil then
+			return;
+		end
+
+		self:PlayPendingCompleteFlash();
+
+		C_Timer.After(0.08, function()
+			_M:ClearPendingDisenchant();
+			_M:UpdateItems();
+		end);
+	end
+
+	_M.PlayPendingCompleteFlash = function(self)
+		-- NEW:
+		-- 1. Plays a small completion flash on the pending grid button.
+		-- 2. Runs just before the item list refresh removes the button.
+
+		if not self.disenchantFrame then
+			return;
+		end
+
+		for i = 1, #self.itemButtons do
+			local button = self.itemButtons[i];
+
+			if self:IsPendingDisenchant(button.bagID, button.slotID, button.itemID) then
+				if button.completeFlashAnim then
+					button.completeFlashAnim:Stop();
+				end
+
+				button.completeFlash:Show();
+				button.completeFlashAnim:Play();
+				return;
+			end
+		end
+	end
+
 	_M.GetItemButtonRenderingCache = function(self)
 		-- Changes:
-		-- 1. Parents item buttons to the scroll child instead of the main frame.
-		-- 2. Keeps the current glow/tooltip behavior.
-		-- 3. Uses layout values from _M for row/column placement.
+		-- 1. Keeps the current click/tooltip behavior.
+		-- 2. Adds a subtle pending overlay texture to each grid button.
+		-- 3. Leaves the item visible until the disenchant actually completes.
 
 		local cache = self.buttonRenderingCache;
 		if not cache.hasCreated then
@@ -431,8 +659,11 @@ do
 				else
 					if key == "RightButton" then
 						_M:BlacklistItem(self.itemID, self.link);
+						_M:UpdateItems();
+					else
+						_M:SetPendingDisenchant(self.bagID, self.slotID, self.itemID);
+						_M:UpdateItems();
 					end
-					self:Hide();
 				end
 			end
 
@@ -465,15 +696,24 @@ do
 					parentName = "ItemButton" .. index,
 					inherit = "SecureActionButtonTemplate",
 					textures = {
-						injectSelf = "backdrop",
-						layer = "BACKGROUND",
-						texture = [[Interface\Buttons\UI-EmptySlot-Disabled]],
-						size = 54,
+						{
+							injectSelf = "backdrop",
+							layer = "BACKGROUND",
+							texture = [[Interface\Buttons\UI-EmptySlot-Disabled]],
+							size = 54,
+						},
+						{
+							injectSelf = "pendingShade",
+							layer = "OVERLAY",
+							size = 54,
+							color = { 0, 0, 0, 0.35 },
+							hidden = true,
+						},
 					},
 					points = {
 						point = "TOPLEFT",
-						x = 0 + (38 * column),   -- REPLACED: start at the top-left of the scroll child
-						y = 0 + (row * -38)      -- REPLACED: first row starts at the top instead of lower down
+						x = 0 + (38 * column),
+						y = 0 + (row * -38)
 					},
 					scripts = {
 						OnEnter = cache.func_mouseEnter,
@@ -489,6 +729,10 @@ do
 	end
 
 	_M.GetItemButton = function(self, index)
+		-- Changes:
+		-- 1. Keeps the spinner overlay.
+		-- 2. Adds a tiny completion flash animation for successful disenchant.
+
 		local buttons = self.itemButtons;
 		if buttons[index + 1] then
 			return buttons[index + 1];
@@ -500,6 +744,36 @@ do
 		button:HookScript("OnClick", cache.func_clickHook);
 		button:RegisterForClicks("LeftButtonDown", "RightButtonDown");
 		button:SetAttribute("useOnKeyDown", true);
+
+		button.pendingSpinner = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate");
+		button.pendingSpinner:SetAllPoints(button);
+		button.pendingSpinner:SetDrawEdge(false);
+		button.pendingSpinner:SetDrawSwipe(true);
+		button.pendingSpinner:SetReverse(false);
+		button.pendingSpinner:Hide();
+
+		button.completeFlash = button:CreateTexture(nil, "OVERLAY");
+		button.completeFlash:SetAllPoints(true);
+		button.completeFlash:SetColorTexture(1, 1, 1, 0.75);
+		button.completeFlash:Hide();
+
+		button.completeFlashAnim = button:CreateAnimationGroup();
+
+		local fadeIn = button.completeFlashAnim:CreateAnimation("Alpha");
+		fadeIn:SetOrder(1);
+		fadeIn:SetFromAlpha(0);
+		fadeIn:SetToAlpha(0.75);
+		fadeIn:SetDuration(0.08);
+
+		local fadeOut = button.completeFlashAnim:CreateAnimation("Alpha");
+		fadeOut:SetOrder(2);
+		fadeOut:SetFromAlpha(0.75);
+		fadeOut:SetToAlpha(0);
+		fadeOut:SetDuration(0.18);
+
+		button.completeFlashAnim:SetScript("OnFinished", function()
+			button.completeFlash:Hide();
+		end);
 
 		buttons[#buttons + 1] = button;
 		return button;
@@ -604,17 +878,176 @@ do
 		self.disenchantFrame.scrollFrame:SetVerticalScroll(0);
 	end
 
-	_M.UpdateItems = function(self)
-		-- REPLACE your entire UpdateItems() function with this version.
+	_M.GetDisenchantListRow = function(self, index)
+		-- REPLACE your entire GetDisenchantListRow() function with this version.
 		-- Changes:
-		-- 1. Cleans up the nested logic.
-		-- 2. Separates validation steps so eligibility is easier to follow.
-		-- 3. Keeps the current weapon/armor + equippable filtering behavior.
-		-- 4. Preserves button creation and secure macro behavior.
-		-- 5. Keeps the current item filtering behavior.
-		-- 6. Counts visible buttons.
-		-- 7. Resizes the window after rebuilding the list.
-		-- 8. Lets the scroll frame handle overflow.
+		-- 1. Keeps the subtle hover highlight.
+		-- 2. Adds a progress bar for pending disenchant.
+		-- 3. Left-click marks the row pending immediately.
+		-- 4. Right-click still blacklists immediately.
+
+		local rows = self.disenchantListRows;
+		if rows[index] then
+			return rows[index];
+		end
+
+		local frame = self.disenchantFrame;
+		local rowHeight = 28;
+
+		local row = CreateFrame("Button", "$parentDisenchantListRow" .. index, frame.disenchantListScrollChild, "SecureActionButtonTemplate");
+		row:SetHeight(rowHeight);
+		row:SetPoint("TOPLEFT", frame.disenchantListScrollChild, "TOPLEFT", 0, -((index - 1) * rowHeight));
+		row:SetPoint("TOPRIGHT", frame.disenchantListScrollChild, "TOPRIGHT", 0, -((index - 1) * rowHeight));
+		row:RegisterForClicks("LeftButtonDown", "RightButtonDown");
+		row:SetAttribute("useOnKeyDown", true);
+		row:Hide();
+
+		row.bg = row:CreateTexture(nil, "BACKGROUND");
+		row.bg:SetAllPoints(true);
+		row.bg:SetColorTexture(1, 1, 1, 0.03);
+
+		row.hover = row:CreateTexture(nil, "HIGHLIGHT");
+		row.hover:SetAllPoints(true);
+		row.hover:SetColorTexture(1, 1, 1, 0.08);
+
+		row.pendingShade = row:CreateTexture(nil, "OVERLAY");
+		row.pendingShade:SetAllPoints(true);
+		row.pendingShade:SetColorTexture(0, 0, 0, 0.18);
+		row.pendingShade:Hide();
+
+		row.icon = row:CreateTexture(nil, "ARTWORK");
+		row.icon:SetSize(20, 20);
+		row.icon:SetPoint("LEFT", row, "LEFT", 4, 0);
+
+		row.text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight");
+		row.text:SetPoint("LEFT", row.icon, "RIGHT", 8, 0);
+		row.text:SetPoint("RIGHT", row, "RIGHT", -4, 0);
+		row.text:SetJustifyH("LEFT");
+
+		row.progressBackground = row:CreateTexture(nil, "BORDER");
+		row.progressBackground:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 4, 2);
+		row.progressBackground:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -4, 2);
+		row.progressBackground:SetHeight(3);
+		row.progressBackground:SetColorTexture(0, 0, 0, 0.35);
+		row.progressBackground:Hide();
+
+		row.progressBar = CreateFrame("StatusBar", nil, row);
+		row.progressBar:SetPoint("TOPLEFT", row.progressBackground, "TOPLEFT", 0, 0);
+		row.progressBar:SetPoint("BOTTOMRIGHT", row.progressBackground, "BOTTOMRIGHT", 0, 0);
+		row.progressBar:SetMinMaxValues(0, 1);
+		row.progressBar:SetValue(0);
+		row.progressBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar");
+		row.progressBar:SetStatusBarColor(0.85, 0.85, 1, 0.9);
+		row.progressBar:Hide();
+
+		row:SetScript("OnEnter", function(self)
+			if self.link then
+				GameTooltip:SetOwner(self, "ANCHOR_LEFT");
+				GameTooltip:SetHyperlink(self.link);
+				GameTooltip:Show();
+			end
+		end);
+
+		row:SetScript("OnLeave", function()
+			GameTooltip:Hide();
+		end);
+
+		row:HookScript("OnClick", function(self, key)
+			if InCombatLockdown() then
+				frame.header:SetText(ERR_NOT_IN_COMBAT);
+				frame.header:SetTextColor(1, 0, 0);
+			else
+				if key == "RightButton" then
+					_M:BlacklistItem(self.itemID, self.link);
+					_M:UpdateItems();
+				else
+					_M:SetPendingDisenchant(self.bagID, self.slotID, self.itemID);
+					_M:UpdateItems();
+				end
+			end
+		end);
+
+		rows[index] = row;
+		return row;
+	end
+
+	_M.UpdateDisenchantListRows = function(self, entries)
+		-- Changes:
+		-- 1. Keeps the current list population logic.
+		-- 2. Shows "Disenchanting..." while a row is pending.
+		-- 3. Keeps the progress bar and muted pending styling.
+
+		if not self.disenchantFrame or not self.disenchantFrame.disenchantListScrollFrame or not self.disenchantFrame.disenchantListScrollChild then
+			return;
+		end
+
+		local rows = self.disenchantListRows;
+		local rowHeight = 28;
+		local contentHeight = #entries * rowHeight;
+
+		if contentHeight < 1 then
+			contentHeight = 1;
+		end
+
+		self.disenchantFrame.disenchantListScrollChild:SetHeight(contentHeight);
+
+		for i = 1, #entries do
+			local entry = entries[i];
+			local row = self:GetDisenchantListRow(i);
+
+			row.itemID = entry.itemID;
+			row.link = entry.link;
+			row.bagID = entry.bagID;
+			row.slotID = entry.slotID;
+
+			row:SetAttribute("type", "macro");
+			row:SetAttribute("macrotext", entry.macrotext);
+
+			if entry.iconFileID then
+				row.icon:SetTexture(entry.iconFileID);
+			else
+				row.icon:SetTexture([[Interface\Icons\INV_Misc_QuestionMark]]);
+			end
+
+			if entry.isPending then
+				row.text:SetText("Disenchanting...");
+				row.pendingShade:Show();
+				row.icon:SetDesaturated(true);
+				row.text:SetTextColor(0.78, 0.78, 0.78, 1);
+				row.progressBackground:Show();
+			else
+				if entry.link then
+					row.text:SetText(entry.link);
+				else
+					row.text:SetText("Item ID: " .. tostring(entry.itemID));
+				end
+
+				row.pendingShade:Hide();
+				row.icon:SetDesaturated(false);
+				row.text:SetTextColor(1, 1, 1, 1);
+				row.progressBackground:Hide();
+				row.progressBar:Hide();
+				row.progressBar:SetValue(0);
+			end
+
+			row:Show();
+		end
+
+		for i = #entries + 1, #rows do
+			rows[i]:Hide();
+		end
+
+		self.disenchantFrame.disenchantListScrollFrame:SetVerticalScroll(0);
+
+		self:UpdatePendingDisenchantVisuals();
+	end
+
+	_M.UpdateItems = function(self)
+		-- Changes:
+		-- 1. Keeps the current scan/filter logic.
+		-- 2. Marks pending grid buttons visually while disenchant is in progress.
+		-- 3. Passes pending state into the list view rows.
+		-- 4. Still refreshes both views from the same scan.
 
 		local buttons = self.itemButtons;
 		local nButtons = #buttons;
@@ -629,6 +1062,7 @@ do
 		self:ResetEquipmentManagerCache();
 
 		local useButton = 0;
+		local listEntries = {};
 
 		for bagID = 0, NUM_BAG_SLOTS do
 			local numSlots = C_Container.GetContainerNumSlots(bagID);
@@ -654,23 +1088,51 @@ do
 								local isEquippable = (itemEquipLoc ~= nil and itemEquipLoc ~= "");
 
 								if isEquippable and (isWeapon or isArmor or isProfessionItem) then
+									local macrotext = format(macroFormat, disenchantName, bagID, slotID);
+									local isPending = self:IsPendingDisenchant(bagID, slotID, itemID);
+
 									local button = self:GetItemButton(useButton);
 
 									SetItemButtonTexture(button, item.iconFileID);
 									SetItemButtonQuality(button, item.quality, item.hyperlink);
 
 									button:SetAttribute("type", "macro");
-									button:SetAttribute("macrotext", format(macroFormat, disenchantName, bagID, slotID));
+									button:SetAttribute("macrotext", macrotext);
 
 									button.link = item.hyperlink;
 									button.itemID = itemID;
+									button.bagID = bagID;
+									button.slotID = slotID;
+
+									if isPending then
+										button:SetAlpha(0.70);
+										if button.pendingShade then
+											button.pendingShade:Show();
+										end
+									else
+										button:SetAlpha(1);
+										if button.pendingShade then
+											button.pendingShade:Hide();
+										end
+									end
 
 									button:Show();
+
+									listEntries[#listEntries + 1] = {
+										itemID = itemID,
+										link = item.hyperlink,
+										iconFileID = item.iconFileID,
+										macrotext = macrotext,
+										bagID = bagID,
+										slotID = slotID,
+										isPending = isPending,
+									};
 
 									useButton = useButton + 1;
 
 									if useButton >= self.maxButtons then
 										self:UpdateWindowHeight(useButton);
+										self:UpdateDisenchantListRows(listEntries);
 										return;
 									end
 								end
@@ -682,7 +1144,9 @@ do
 		end
 
 		self:UpdateWindowHeight(useButton);
+		self:UpdateDisenchantListRows(listEntries);
 	end
+
 	_M.SaveWindowPosition = function(self)
 		-- Saves the current frame anchor into saved variables.
 
@@ -765,10 +1229,11 @@ do
 	end
 
 	_M.SetActiveTab = function(self, tabName)
-		-- NEW:
+		-- Changes:
 		-- 1. Switches between the Disenchant and Blacklist content regions.
-		-- 2. Updates the selected state of the tab buttons.
-		-- 3. Fully refreshes the blacklist view when switching to Blacklist.
+		-- 2. Keeps Blizzard tab selected/deselected state.
+		-- 3. Restores the current Disenchant sub-view when switching back.
+		-- 4. Refreshes blacklist view when switching to Blacklist.
 
 		if not self.disenchantFrame then
 			return;
@@ -792,6 +1257,8 @@ do
 
 			PanelTemplates_SelectTab(frame.disenchantTabButton);
 			PanelTemplates_DeselectTab(frame.blacklistTabButton);
+
+			self:RefreshDisenchantView();
 		end
 	end
 
@@ -826,10 +1293,11 @@ do
 	end
 
 	_M.GetBlacklistRow = function(self, index)
-		-- NEW:
-		-- 1. Creates/reuses a blacklist row frame.
-		-- 2. Each row has an icon, item text, and Remove button.
-		-- 3. Icon and text show the item tooltip on hover.
+		-- Changes:
+		-- 1. Matches the Disenchant list row styling more closely.
+		-- 2. Adds a subtle hover highlight.
+		-- 3. Adds a bottom accent bar for cleaner polish.
+		-- 4. Keeps the Remove button and tooltip behavior.
 
 		local rows = self.blacklistRows;
 		if rows[index] then
@@ -849,6 +1317,10 @@ do
 		row.bg:SetAllPoints(true);
 		row.bg:SetColorTexture(1, 1, 1, 0.03);
 
+		row.hover = row:CreateTexture(nil, "HIGHLIGHT");
+		row.hover:SetAllPoints(true);
+		row.hover:SetColorTexture(1, 1, 1, 0.08);
+
 		row.icon = row:CreateTexture(nil, "ARTWORK");
 		row.icon:SetSize(20, 20);
 		row.icon:SetPoint("LEFT", row, "LEFT", 4, 0);
@@ -857,6 +1329,12 @@ do
 		row.text:SetPoint("LEFT", row.icon, "RIGHT", 8, 0);
 		row.text:SetPoint("RIGHT", row, "RIGHT", -70, 0);
 		row.text:SetJustifyH("LEFT");
+
+		row.bottomAccent = row:CreateTexture(nil, "BORDER");
+		row.bottomAccent:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 4, 2);
+		row.bottomAccent:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -4, 2);
+		row.bottomAccent:SetHeight(3);
+		row.bottomAccent:SetColorTexture(0, 0, 0, 0.35);
 
 		row.removeButton = CreateFrame("Button", nil, row, "UIPanelButtonTemplate");
 		row.removeButton:SetSize(60, 20);
@@ -933,6 +1411,66 @@ do
 		end
 
 		self.disenchantFrame.blacklistScrollFrame:SetVerticalScroll(0);
+	end
+
+	_M.UpdateDisenchantViewButtons = function(self)
+		-- NEW:
+		-- 1. Updates the graphic state for the Buttons/List view icons.
+		-- 2. Shows Active art for the selected mode.
+		-- 3. Shows Inactive/Hover art for the non-selected mode.
+
+		if not self.disenchantFrame then
+			return;
+		end
+
+		local frame = self.disenchantFrame;
+		local mediaPath = "Interface\\AddOns\\EasyDisenchantRevamped\\Media\\";
+
+		local isListView = (self.disenchantViewMode == "LIST");
+
+		if isListView then
+			frame.disenchantButtonViewButton.icon:SetTexture(mediaPath .. "Icons_GridView_Inactive_x32");
+			frame.disenchantListViewButton.icon:SetTexture(mediaPath .. "Icons_ListView_Active_x32");
+		else
+			frame.disenchantButtonViewButton.icon:SetTexture(mediaPath .. "Icons_GridView_Active_x32");
+			frame.disenchantListViewButton.icon:SetTexture(mediaPath .. "Icons_ListView_Inactive_x32");
+		end
+	end
+
+	_M.SetDisenchantViewMode = function(self, viewMode)
+		-- Changes:
+		-- 1. Switches between the Disenchant button grid and Disenchant list container.
+		-- 2. Updates the selected state of the two view toggle buttons.
+		-- 3. Saves the selected view mode.
+
+		if not self.disenchantFrame then
+			return;
+		end
+
+		self.disenchantViewMode = viewMode;
+		self.settings.disenchantViewMode = viewMode;
+
+		local frame = self.disenchantFrame;
+
+		if viewMode == "LIST" then
+			frame.scrollFrame:Hide();
+			frame.disenchantListContent:Show();
+
+			frame.disenchantButtonViewButton.icon:SetDesaturated(false);
+			frame.disenchantListViewButton.icon:SetDesaturated(false);
+		else
+			frame.disenchantListContent:Hide();
+			frame.scrollFrame:Show();
+		end
+
+		self:UpdateDisenchantViewButtons();
+	end
+
+	_M.RefreshDisenchantView = function(self)
+		-- Changes:
+		-- 1. Re-applies the current Disenchant view mode after data/UI refreshes.
+
+		self:SetDisenchantViewMode(self.disenchantViewMode or "BUTTONS");
 	end
 
 	_M.CreateDisenchantFrame = function(self)
@@ -1132,7 +1670,7 @@ do
 		end);
 
 		self.disenchantFrame.blacklistTabButton = CreateFrame("Button", "$parentBlacklistTabButton", self.disenchantFrame, "PanelTopTabButtonTemplate");
-		self.disenchantFrame.disenchantTabButton:SetID(2)
+		self.disenchantFrame.blacklistTabButton:SetID(2)
 		self.disenchantFrame.blacklistTabButton:SetText("Blacklist");
 		PanelTemplates_TabResize(self.disenchantFrame.blacklistTabButton, 20);
 		self.disenchantFrame.blacklistTabButton:SetPoint("TOPLEFT", self.disenchantFrame.disenchantTabButton, "TOPRIGHT", 8, 0);
@@ -1176,7 +1714,7 @@ do
 
 		-- Existing Disenchant tab scroll frame.
 		self.disenchantFrame.scrollFrame = CreateFrame("ScrollFrame", "$parentScrollFrame", self.disenchantFrame.disenchantContent, "UIPanelScrollFrameTemplate");
-		self.disenchantFrame.scrollFrame:SetPoint("TOPLEFT", self.disenchantFrame.disenchantContent, "TOPLEFT", 20, 0);
+		self.disenchantFrame.scrollFrame:SetPoint("TOPLEFT", self.disenchantFrame.disenchantContent, "TOPLEFT", 20, -30);
 		self.disenchantFrame.scrollFrame:SetPoint("BOTTOMRIGHT", self.disenchantFrame.disenchantContent, "BOTTOMRIGHT", -10, 4);
 		self.disenchantFrame.scrollFrame:EnableMouseWheel(true);
 
@@ -1199,19 +1737,96 @@ do
 		end);
 
 		self.disenchantFrame.scrollFrame.scrollChild = self.disenchantFrame.scrollChild;
+		
+		-- Disenchant view toggle buttons
+		local mediaPath = "Interface\\AddOns\\EasyDisenchantRevamped\\Media\\";
 
-		-- ADD THIS BLOCK: Blacklist tab scroll frame
+		self.disenchantFrame.disenchantButtonViewButton = CreateFrame("Button", "$parentDisenchantButtonViewButton", self.disenchantFrame.disenchantContent);
+		self.disenchantFrame.disenchantButtonViewButton:SetSize(22, 22);
+		self.disenchantFrame.disenchantButtonViewButton:SetPoint("TOPRIGHT", self.disenchantFrame.disenchantContent, "TOPRIGHT", -30, 0);
+		self.disenchantFrame.disenchantButtonViewButton:SetScript("OnClick", function()
+			_M:SetDisenchantViewMode("BUTTONS");
+		end);
+
+		self.disenchantFrame.disenchantButtonViewButton.icon = self.disenchantFrame.disenchantButtonViewButton:CreateTexture(nil, "ARTWORK");
+		self.disenchantFrame.disenchantButtonViewButton.icon:SetAllPoints(true);
+		self.disenchantFrame.disenchantButtonViewButton.icon:SetTexture(mediaPath .. "Icons_GridView_Active_x32");
+
+		self.disenchantFrame.disenchantButtonViewButton:SetScript("OnEnter", function(button)
+			if _M.disenchantViewMode ~= "BUTTONS" then
+				button.icon:SetTexture(mediaPath .. "Icons_GridView_Hover_x32");
+			end
+		end);
+
+		self.disenchantFrame.disenchantButtonViewButton:SetScript("OnLeave", function(button)
+			if _M.disenchantViewMode ~= "BUTTONS" then
+				button.icon:SetTexture(mediaPath .. "Icons_GridView_Inactive_x32");
+			end
+		end);
+
+		self.disenchantFrame.disenchantListViewButton = CreateFrame("Button", "$parentDisenchantListViewButton", self.disenchantFrame.disenchantContent);
+		self.disenchantFrame.disenchantListViewButton:SetSize(22, 22);
+		self.disenchantFrame.disenchantListViewButton:SetPoint("RIGHT", self.disenchantFrame.disenchantButtonViewButton, "LEFT", -4, 0);
+		self.disenchantFrame.disenchantListViewButton:SetScript("OnClick", function()
+			_M:SetDisenchantViewMode("LIST");
+		end);
+
+		self.disenchantFrame.disenchantListViewButton.icon = self.disenchantFrame.disenchantListViewButton:CreateTexture(nil, "ARTWORK");
+		self.disenchantFrame.disenchantListViewButton.icon:SetAllPoints(true);
+		self.disenchantFrame.disenchantListViewButton.icon:SetTexture(mediaPath .. "Icons_ListView_Inactive_x32");
+
+		self.disenchantFrame.disenchantListViewButton:SetScript("OnEnter", function(button)
+			if _M.disenchantViewMode ~= "LIST" then
+				button.icon:SetTexture(mediaPath .. "Icons_ListView_Hover_x32");
+			end
+		end);
+
+		self.disenchantFrame.disenchantListViewButton:SetScript("OnLeave", function(button)
+			if _M.disenchantViewMode ~= "LIST" then
+				button.icon:SetTexture(mediaPath .. "Icons_ListView_Inactive_x32");
+			end
+		end);
+
+		self.disenchantFrame.disenchantListContent = CreateFrame("FRAME", "$parentDisenchantListContent", self.disenchantFrame.disenchantContent);
+		self.disenchantFrame.disenchantListContent:SetPoint("TOPLEFT", self.disenchantFrame.disenchantContent, "TOPLEFT", 20, -30);
+		self.disenchantFrame.disenchantListContent:SetPoint("BOTTOMRIGHT", self.disenchantFrame.disenchantContent, "BOTTOMRIGHT", -10, 4);
+		self.disenchantFrame.disenchantListContent:Hide();
+
+		self.disenchantFrame.disenchantListScrollFrame = CreateFrame("ScrollFrame", "$parentDisenchantListScrollFrame", self.disenchantFrame.disenchantListContent, "UIPanelScrollFrameTemplate");
+		self.disenchantFrame.disenchantListScrollFrame:SetPoint("TOPLEFT", self.disenchantFrame.disenchantListContent, "TOPLEFT", 0, 0);
+		self.disenchantFrame.disenchantListScrollFrame:SetPoint("BOTTOMRIGHT", self.disenchantFrame.disenchantListContent, "BOTTOMRIGHT", 0, 0);
+		self.disenchantFrame.disenchantListScrollFrame:EnableMouseWheel(true);
+
+		self.disenchantFrame.disenchantListScrollChild = CreateFrame("FRAME", "$parentDisenchantListScrollChild", self.disenchantFrame.disenchantListScrollFrame);
+		self.disenchantFrame.disenchantListScrollChild:SetSize(344, 1);
+		self.disenchantFrame.disenchantListScrollFrame:SetScrollChild(self.disenchantFrame.disenchantListScrollChild);
+
+		self.disenchantFrame.disenchantListScrollFrame:SetScript("OnMouseWheel", function(scrollFrame, delta)
+			local currentScroll = scrollFrame:GetVerticalScroll();
+			local maxScroll = math.max(0, scrollFrame.disenchantListScrollChild:GetHeight() - scrollFrame:GetHeight());
+			local newScroll = currentScroll - (delta * 28);
+
+			if newScroll < 0 then
+				newScroll = 0;
+			elseif newScroll > maxScroll then
+				newScroll = maxScroll;
+			end
+
+			scrollFrame:SetVerticalScroll(newScroll);
+		end);
+
+		self.disenchantFrame.disenchantListScrollFrame.disenchantListScrollChild = self.disenchantFrame.disenchantListScrollChild;
+
+		-- Blacklist tab scroll frame
 		self.disenchantFrame.blacklistScrollFrame = CreateFrame("ScrollFrame", "$parentBlacklistScrollFrame", self.disenchantFrame.blacklistContent, "UIPanelScrollFrameTemplate");
 		self.disenchantFrame.blacklistScrollFrame:SetPoint("TOPLEFT", self.disenchantFrame.blacklistContent, "TOPLEFT", 20, -30);
 		self.disenchantFrame.blacklistScrollFrame:SetPoint("BOTTOMRIGHT", self.disenchantFrame.blacklistContent, "BOTTOMRIGHT", -10, 4);
 		self.disenchantFrame.blacklistScrollFrame:EnableMouseWheel(true);
 
-		-- ADD THIS BLOCK: Blacklist tab scroll child
 		self.disenchantFrame.blacklistScrollChild = CreateFrame("FRAME", "$parentBlacklistScrollChild", self.disenchantFrame.blacklistScrollFrame);
-		self.disenchantFrame.blacklistScrollChild:SetSize(320, 1);
+		self.disenchantFrame.blacklistScrollChild:SetSize(344, 1);
 		self.disenchantFrame.blacklistScrollFrame:SetScrollChild(self.disenchantFrame.blacklistScrollChild);
 
-		-- ADD THIS BLOCK: Blacklist mouse wheel behavior
 		self.disenchantFrame.blacklistScrollFrame:SetScript("OnMouseWheel", function(scrollFrame, delta)
 			local currentScroll = scrollFrame:GetVerticalScroll();
 			local maxScroll = math.max(0, scrollFrame.blacklistScrollChild:GetHeight() - scrollFrame:GetHeight());
@@ -1226,12 +1841,18 @@ do
 			scrollFrame:SetVerticalScroll(newScroll);
 		end);
 
-		-- ADD THIS LINE: make the child available to the mouse wheel function
-		self.disenchantFrame.blacklistScrollFrame.blacklistScrollChild = self.disenchantFrame.blacklistScrollChild;
+		self.disenchantFrame.blacklistScrollFrame.blacklistScrollChild = self.disenchantFrame.blacklistScrollChild;		
+
+		self.disenchantFrame.pendingAnimationFrame = CreateFrame("Frame", nil, self.disenchantFrame);
+		self.disenchantFrame.pendingAnimationFrame:Hide();
+		self.disenchantFrame.pendingAnimationFrame:SetScript("OnUpdate", function()
+			_M:UpdatePendingDisenchantVisuals();
+		end);
 
 		self:RestoreWindowPosition();
 		self:RegisterEscapeFrame();
 		self:SetActiveTab("DISENCHANT");
+		self:SetDisenchantViewMode(self.disenchantViewMode or "BUTTONS");
 	end
 
 	_M.OpenWindow = function(self)
@@ -1249,9 +1870,6 @@ do
 		self:UpdateItems();
 		self.disenchantFrame:Show();
 		self.disenchantFrame:SetClampedToScreen(true);
-
-		PlaySound(SOUNDKIT.UI_ETHEREAL_WINDOW_OPEN);
-	end
 
 		PlaySound(SOUNDKIT.UI_ETHEREAL_WINDOW_OPEN);
 	end
@@ -1287,10 +1905,6 @@ do
 		end
 	end
 	
-	_M.InvokeWindowOpen = function()
-		_M:OpenWindow();
-	end
-
 	_M.InvokeWindowOpen = function()
 		_M:OpenWindow();
 	end
