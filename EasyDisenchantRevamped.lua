@@ -35,8 +35,8 @@ do
 		minFrameHeight = 350,
 		maxFrameHeight = 650,
 		itemRowHeight = 38,
-		itemsPerRow = 9,		
-		
+		itemsPerRow = 9,
+
 		buttonRenderingCache = {}
 	};
 
@@ -89,6 +89,150 @@ do
 
 		self:Print(self.BLACKLIST_ADD_ITEM:format(itemLink));
 		self:Print(self.BLACKLIST_INFO);
+	end
+
+	_M.OnLoad = function(self)
+		-- REPLACE your entire OnLoad() function with this version.
+		-- Changes:
+		-- 1. Keeps slash command setup.
+		-- 2. Initializes blacklist/settings saved variables.
+		-- 3. Migrates old blacklist entries from itemID = true to rich entry tables.
+		-- 4. Initializes settings saved variables for window position.
+
+		-- Register command.
+		SLASH_DISENCHANT1, SLASH_DISENCHANT2 = "/disenchant", "/de";
+		SlashCmdList["DISENCHANT"] = _M.OnCommand;
+
+		-- Create stored blacklist table if it doesn't exist.
+		if not EasyDisenchantBlacklist then
+			EasyDisenchantBlacklist = {};
+		end
+
+		-- Create stored settings table if it doesn't exist.
+		if not EasyDisenchantRevampedSettings then
+			EasyDisenchantRevampedSettings = {};
+		end
+
+		-- Store local references to our saved tables.
+		self.blacklist = EasyDisenchantBlacklist;
+		self.settings = EasyDisenchantRevampedSettings;
+
+		-- Migrate old blacklist format:
+		-- old:  self.blacklist[itemID] = true
+		-- new:  self.blacklist[itemID] = { itemID=..., itemLink=..., itemName=..., iconFileID=..., quality=..., timeAdded=... }
+		for itemID, entry in pairs(self.blacklist) do
+			if entry == true then
+				local itemLink = select(2, GetItemInfo(itemID));
+				local itemName, _, itemQuality, _, _, _, _, _, _, itemIcon = GetItemInfo(itemID);
+
+				self.blacklist[itemID] = {
+					itemID = itemID,
+					itemLink = itemLink,
+					itemName = itemName or ("Item ID: " .. itemID),
+					iconFileID = itemIcon,
+					quality = itemQuality,
+					timeAdded = 0, -- migrated entries sort below real dated entries
+				};
+			end
+		end
+	end
+
+	_M.GetBlacklistEntry = function(self, itemID)
+		-- NEW:
+		-- 1. Returns the rich blacklist entry for an itemID.
+		-- 2. Safely handles missing entries.
+
+		return self.blacklist[itemID];
+	end
+
+	_M.RefreshBlacklistEntry = function(self, itemID)
+		-- NEW:
+		-- 1. Optionally refreshes display snapshot fields if better item data is available.
+		-- 2. Preserves timeAdded.
+		-- 3. Keeps existing saved values when fresh item data is unavailable.
+
+		local entry = self.blacklist[itemID];
+		if not entry then
+			return nil;
+		end
+
+		local itemName, itemLink, itemQuality, _, _, _, _, _, _, itemIcon = GetItemInfo(itemID);
+
+		if itemName then
+			entry.itemName = itemName;
+		end
+
+		if itemLink then
+			entry.itemLink = itemLink;
+		end
+
+		if itemQuality ~= nil then
+			entry.quality = itemQuality;
+		end
+
+		if itemIcon then
+			entry.iconFileID = itemIcon;
+		end
+
+		if entry.timeAdded == nil then
+			entry.timeAdded = 0;
+		end
+
+		return entry;
+	end
+
+	_M.GetBlacklistCount = function(self)
+		-- NEW:
+		-- 1. Returns the total number of blacklisted item entries.
+
+		local count = 0;
+
+		for itemID, entry in pairs(self.blacklist) do
+			if entry ~= nil then
+				count = count + 1;
+			end
+		end
+
+		return count;
+	end
+
+	_M.GetSortedBlacklistEntries = function(self)
+		-- NEW:
+		-- 1. Builds an array of blacklist entries from the saved dictionary.
+		-- 2. Refreshes display snapshot data when possible.
+		-- 3. Sorts by timeAdded (newest first), then itemName, then itemID.
+
+		local entries = {};
+
+		for itemID, entry in pairs(self.blacklist) do
+			if entry ~= nil then
+				entry = self:RefreshBlacklistEntry(itemID) or entry;
+				entries[#entries + 1] = entry;
+			end
+		end
+
+		table.sort(entries, function(a, b)
+			local aTimeAdded = a.timeAdded or 0;
+			local bTimeAdded = b.timeAdded or 0;
+
+			if aTimeAdded ~= bTimeAdded then
+				return aTimeAdded > bTimeAdded;
+			end
+
+			local aName = a.itemName or "";
+			local bName = b.itemName or "";
+
+			if aName ~= bName then
+				return aName < bName;
+			end
+
+			local aItemID = a.itemID or 0;
+			local bItemID = b.itemID or 0;
+
+			return aItemID < bItemID;
+		end);
+
+		return entries;
 	end
 
 	_M.OnLoad = function(self)
@@ -352,34 +496,40 @@ do
 
 		local cache = self:GetItemButtonRenderingCache();
 		local button = _K:Frame(cache.factory(index));
-		
+
 		button:HookScript("OnClick", cache.func_clickHook);
 		button:RegisterForClicks("LeftButtonDown", "RightButtonDown");
-		
+		button:SetAttribute("useOnKeyDown", true);
+
 		buttons[#buttons + 1] = button;
 		return button;
 	end
 
 	_M.ScanEquipmentManager = function(self)
+        local ITEM_INVENTORY_BAG_OFFSET = 4096;
 		local numOutfits = C_EquipmentSet.GetNumEquipmentSets();
 		local equipmentCache = {};
 
 		-- Equipment sets appear to be zero-index since 8.0?
 		for index = 0, numOutfits - 1 do
-			local _, _, setID = C_EquipmentSet.GetEquipmentSetInfo(index);
+			local setName, _, setID = C_EquipmentSet.GetEquipmentSetInfo(index);
 			if setID ~= nil then
-				local itemLocations = C_EquipmentSet.GetItemLocations(setID);		
-				for slotIndex, itemLocation in pairs(itemLocations) do
-					local isInBags = (bit.band(itemLocation, ITEM_INVENTORY_LOCATION_BAGS) ~= 0);
-					if isInBags then
-						local _, _, _, _, itemSlotIndex, itemBagIndex = EquipmentManager_UnpackLocation(itemLocation);
+                local locations = C_EquipmentSet.GetItemLocations(setID);
+                for slotIndex, location in pairs(locations) do
+                    local isInBags = (bit.band(location, ITEM_INVENTORY_LOCATION_BAGS) ~= 0);
+                    if isInBags and location > 0 then
+                        local slotLocation = location;
+                        slotLocation = slotLocation - ITEM_INVENTORY_LOCATION_BAGS;
+                        local bag = bit.rshift(slotLocation, ITEM_INVENTORY_BAG_BIT_OFFSET);
+                        local slot = slotLocation - bit.lshift(bag, ITEM_INVENTORY_BAG_BIT_OFFSET);
+                        bag = bag - ITEM_INVENTORY_BAG_OFFSET;
 
-						if itemSlotIndex ~= nil and itemBagIndex ~= nil then						
-							local itemID = C_Container.GetContainerItemID(itemBagIndex, itemSlotIndex);
-							equipmentCache[table.concat({itemBagIndex, itemSlotIndex, itemID}, "-")] = true;
-						end
-					end
-				end
+                        if bag ~= nil and slot ~= nil then
+                            local itemID = C_Container.GetContainerItemID(bag, slot);
+                            equipmentCache[table.concat({bag, slot, itemID}, "-")] = true;
+                        end
+                    end
+                end
 			else
 				self:Print(self.BROKEN_ITEM_SET);
 			end
@@ -500,9 +650,10 @@ do
 							if not isBlacklisted and not isInOutfit then
 								local isWeapon = (classID == Enum.ItemClass.Weapon);
 								local isArmor = (classID == Enum.ItemClass.Armor);
+								local isProfessionItem = (classID == Enum.ItemClass.Profession);
 								local isEquippable = (itemEquipLoc ~= nil and itemEquipLoc ~= "");
 
-								if isEquippable and (isWeapon or isArmor) then
+								if isEquippable and (isWeapon or isArmor or isProfessionItem) then
 									local button = self:GetItemButton(useButton);
 
 									SetItemButtonTexture(button, item.iconFileID);
@@ -532,7 +683,6 @@ do
 
 		self:UpdateWindowHeight(useButton);
 	end
-	
 	_M.SaveWindowPosition = function(self)
 		-- Saves the current frame anchor into saved variables.
 
@@ -584,7 +734,7 @@ do
 		end
 
 		tinsert(UISpecialFrames, self.disenchantFrame:GetName());
-	end	
+	end
 
 	_M.UpdateBlacklistHeader = function(self)
 		-- NEW:
@@ -1102,6 +1252,9 @@ do
 
 		PlaySound(SOUNDKIT.UI_ETHEREAL_WINDOW_OPEN);
 	end
+
+		PlaySound(SOUNDKIT.UI_ETHEREAL_WINDOW_OPEN);
+	end
 	
 	_M.OnCommand = function(msg)
 		msg = strlower(msg);
@@ -1134,6 +1287,10 @@ do
 		end
 	end
 	
+	_M.InvokeWindowOpen = function()
+		_M:OpenWindow();
+	end
+
 	_M.InvokeWindowOpen = function()
 		_M:OpenWindow();
 	end
