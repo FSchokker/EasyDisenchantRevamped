@@ -16,6 +16,6 @@ Localization/Strings_ruRU.lua
 Localization/Strings_zhCN.lua
 Localization/Strings_zhTW.lua
 
-## X-Contributors: Kruithne, MarkWisselink, robgha01
+## X-Contributors: Kruithne, Numy, robgha01, Malitor
 ## X-GitHub-Repo: FHeerdink/EasyDisenchantRevamped
 ## X-Curse-Project-ID: easydisenchantrevamped
