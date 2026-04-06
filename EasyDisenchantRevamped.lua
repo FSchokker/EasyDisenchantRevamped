@@ -44,37 +44,76 @@ do
 		itemRowHeight = 38,
 		itemsPerRow = 9,
 
-		buttonRenderingCache = {}
+		buttonRenderingCache = {},
+		Strings = {}
 	};
 
 	BINDING_HEADER_EASY_DISENCHANT = _M.ADDON_NAME;
 	BINDING_NAME_EASY_DISENCHANT_OPEN = SHOW;
 
 	-- Set table __index call to pass-through strings.
-	setmetatable(_M, { __index = function(t, k) return t.Strings[k]; end });
+	setmetatable(_M, {
+		__index = function(t, k)
+			local strings = rawget(t, "Strings");
+			if strings then
+				return strings[k];
+			end
+
+			return nil;
+		end
+	});
 
 	_M.UpdateMinimapButtonPosition = function(self)
-	-- Positions the minimap button based on the saved angle.
+		-- Positions the minimap button based on the saved angle.
 
-	if not self.minimapButton then
-		return;
+		if not self.minimapButton then
+			return;
+		end
+
+		local angle = self.settings.minimapButtonAngle or 225;
+		local radius = 80;
+
+		local x = math.cos(math.rad(angle)) * radius;
+		local y = math.sin(math.rad(angle)) * radius;
+
+		self.minimapButton:ClearAllPoints();
+		self.minimapButton:SetPoint("CENTER", Minimap, "CENTER", x, y);
 	end
 
-	local angle = self.settings.minimapButtonAngle or 225;
-	local radius = 80;
+	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	-- Minimap button helpers
+	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	
+	_M.OpenSettingsPanel = function(self)
+		-- NEW:
+		-- 1. Opens the Blizzard Settings entry for this addon.
+		-- 2. Uses the double-open behavior for reliability.
 
-	local x = math.cos(math.rad(angle)) * radius;
-	local y = math.sin(math.rad(angle)) * radius;
+		if not self.settingsCategory then
+			return;
+		end
 
-	self.minimapButton:ClearAllPoints();
-	self.minimapButton:SetPoint("CENTER", Minimap, "CENTER", x, y);
-end
+		if Settings and Settings.OpenToCategory then
+			Settings.OpenToCategory(self.settingsCategory.ID);
+			Settings.OpenToCategory(self.settingsCategory.ID);
+		end
+	end
+
+	_M.SetMinimapButtonLocked = function(self, isLocked)
+		-- NEW:
+		-- 1. Saves the minimap lock setting.
+		-- 2. Applies it immediately.
+
+		self.settings.lockMinimapButton = isLocked and true or false;
+	end
 
 	_M.CreateMinimapButton = function(self)
-		-- Creates a draggable minimap button that:
+		-- Changes:
 		-- 1. Left-click opens the addon window.
-		-- 2. Right-drag moves it around the minimap.
-		-- 3. Shows a tooltip on hover.
+		-- 2. Right-click now opens the Blizzard Settings entry.
+		-- 3. CTRL + Right-click and drag moves the minimap button.
+		-- 4. Dragging is blocked when the button is locked.
+		-- 5. Tooltip text reflects the new behavior.
 
 		if self.minimapButton then
 			return;
@@ -83,9 +122,8 @@ end
 		local button = CreateFrame("Button", "EasyDisenchantRevampedMinimapButton", Minimap);
 		button:SetSize(32, 32);
 		button:SetFrameStrata("MEDIUM");
-		button:SetMovable(true);
+		button:EnableMouse(true);
 		button:RegisterForClicks("LeftButtonUp", "RightButtonUp");
-		button:RegisterForDrag("RightButton");
 
 		button:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight");
 
@@ -97,15 +135,37 @@ end
 		button.icon = button:CreateTexture(nil, "BACKGROUND");
 		button.icon:SetSize(20, 20);
 		button.icon:SetPoint("CENTER", 0, 0);
-		button.icon:SetTexture("Interface\\AddOns\\EasyDisenchantRevamped\\Media\\icon_MiniMap_x32"); -- REPLACE this with your real icon path later
+		button.icon:SetTexture("Interface\\AddOns\\EasyDisenchantRevamped\\Media\\icon_MiniMap_x32");
 
 		button:SetScript("OnClick", function(_, mouseButton)
 			if mouseButton == "LeftButton" then
-				_M:OpenWindow();
+				if _M.disenchantFrame and _M.disenchantFrame:IsShown() then
+					_M.disenchantFrame:Hide();
+				else
+					_M:OpenWindow();
+				end
+			elseif mouseButton == "RightButton" then
+				if not IsControlKeyDown() then
+					_M:OpenSettingsPanel();
+				end
 			end
 		end);
 
-		button:SetScript("OnDragStart", function(self)
+		button:SetScript("OnMouseDown", function(self, mouseButton)
+			if mouseButton ~= "RightButton" then
+				return;
+			end
+
+			if not IsControlKeyDown() then
+				return;
+			end
+
+			if _M.settings.lockMinimapButton then
+				return;
+			end
+
+			self.isDragging = true;
+
 			self:SetScript("OnUpdate", function()
 				local mx, my = Minimap:GetCenter();
 				local px, py = GetCursorPosition();
@@ -124,15 +184,30 @@ end
 			end);
 		end);
 
-		button:SetScript("OnDragStop", function(self)
+		button:SetScript("OnMouseUp", function(self, mouseButton)
+			if mouseButton == "RightButton" then
+				self.isDragging = nil;
+				self:SetScript("OnUpdate", nil);
+			end
+		end);
+
+		button:SetScript("OnHide", function(self)
+			self.isDragging = nil;
 			self:SetScript("OnUpdate", nil);
 		end);
 
 		button:SetScript("OnEnter", function(self)
 			GameTooltip:SetOwner(self, "ANCHOR_LEFT");
 			GameTooltip:SetText("Easy Disenchant Revamped");
-			GameTooltip:AddLine("Left-click: Open window", 1, 1, 1);
-			GameTooltip:AddLine("Right-drag: Move button", 1, 1, 1);
+			GameTooltip:AddLine("Left-click: Toggle window", 1, 1, 1);
+			GameTooltip:AddLine("Right-click: Open settings", 1, 1, 1);
+
+			if _M.settings.lockMinimapButton then
+				GameTooltip:AddLine("CTRL + Right-drag: Locked", 1, 0.25, 0.25);
+			else
+				GameTooltip:AddLine("CTRL + Right-drag: Move button", 1, 1, 1);
+			end
+
 			GameTooltip:Show();
 		end);
 
@@ -144,6 +219,163 @@ end
 		self:UpdateMinimapButtonPosition();
 	end
 
+	_M.UpdateMinimapButtonVisibility = function(self)
+		-- Changes:
+		-- 1. Shows or hides the minimap button based on saved settings.
+		-- 2. Creates the button first if needed.
+
+		if not self.minimapButton then
+			self:CreateMinimapButton();
+		end
+
+		if self.settings.showMinimapButton then
+			self.minimapButton:Show();
+		else
+			self.minimapButton:Hide();
+		end
+	end
+
+	_M.SetMinimapButtonShown = function(self, isShown)
+		-- Changes:
+		-- 1. Saves the minimap button visibility setting.
+		-- 2. Applies the visibility immediately.
+
+		self.settings.showMinimapButton = isShown and true or false;
+		self:UpdateMinimapButtonVisibility();
+	end
+
+	_M.CreateSettingsPanel = function(self)
+		-- Changes:
+		-- 1. Uses a custom Blizzard Settings canvas panel.
+		-- 2. Adds Show/Hide Minimap Button.
+		-- 3. Adds Lock Minimap Button Position.
+		-- 4. Adds a professional About section at the bottom.
+		-- 5. Uses read-only URL boxes for CurseForge and GitHub links.
+		-- 6. Adds the addon logo in the top-right corner of the settings panel.
+
+		if self.settingsPanelCreated then
+			return;
+		end
+
+		local panel = CreateFrame("Frame", nil, UIParent);
+		panel.name = self.ADDON_NAME;
+
+		local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalHuge");
+		title:SetPoint("TOPLEFT", 16, -16);
+		title:SetText("Easy Disenchant Revamped");
+
+		local subtitle = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight");
+		subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8);
+		subtitle:SetWidth(620);
+		subtitle:SetJustifyH("LEFT");
+		subtitle:SetText("Configuration options for Easy Disenchant Revamped.");
+
+		-- ADD THIS BLOCK: top-right logo
+		panel.logo = panel:CreateTexture(nil, "ARTWORK");
+		panel.logo:SetSize(40, 40);
+		panel.logo:SetTexture("Interface\\AddOns\\EasyDisenchantRevamped\\Media\\icon_MiniMap_x32");
+		panel.logo:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -24, -16);
+
+		local minimapCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate");
+		minimapCheckbox:SetPoint("TOPLEFT", subtitle, "BOTTOMLEFT", 0, -20);
+		minimapCheckbox.Text:SetText("Show Minimap Button");
+		minimapCheckbox:SetChecked(self.settings.showMinimapButton);
+
+		minimapCheckbox:SetScript("OnClick", function(button)
+			_M:SetMinimapButtonShown(button:GetChecked());
+		end);
+
+		local lockCheckbox = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate");
+		lockCheckbox:SetPoint("TOPLEFT", minimapCheckbox, "BOTTOMLEFT", 0, -8);
+		lockCheckbox.Text:SetText("Lock Minimap Button Position");
+		lockCheckbox:SetChecked(self.settings.lockMinimapButton);
+
+		lockCheckbox:SetScript("OnClick", function(button)
+			_M:SetMinimapButtonLocked(button:GetChecked());
+		end);
+
+		local divider = panel:CreateTexture(nil, "ARTWORK");
+		divider:SetColorTexture(1, 1, 1, 0.10);
+		divider:SetHeight(1);
+		divider:SetPoint("TOPLEFT", lockCheckbox, "BOTTOMLEFT", 0, -18);
+		divider:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -16, -140);
+
+		local aboutHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge");
+		aboutHeader:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 0, -16);
+		aboutHeader:SetText("About");
+
+		local aboutText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight");
+		aboutText:SetPoint("TOPLEFT", aboutHeader, "BOTTOMLEFT", 0, -10);
+		aboutText:SetWidth(700);
+		aboutText:SetJustifyH("LEFT");
+		aboutText:SetSpacing(4);
+		aboutText:SetText(
+			"Developer: |cFFFFFFFFFSchokker|r\n" ..
+			"Contributors/Collabs: |cFFFFFFFFMalitor|r\n" ..
+			"Original Developers/Contributors: |cFFFFFFFFKruithne, Numy, robgha01|r"
+		);
+
+		local function CreateReadOnlyURLBox(parent, labelText, urlText, anchorTo)
+			local label = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal");
+			label:SetPoint("TOPLEFT", anchorTo, "BOTTOMLEFT", 0, -14);
+			label:SetText(labelText);
+
+			local box = CreateFrame("EditBox", nil, parent, "InputBoxTemplate");
+			box:SetSize(520, 24);
+			box:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -6);
+			box:SetAutoFocus(false);
+			box:SetTextInsets(6, 6, 0, 0);
+			box:SetText(urlText);
+			box:SetCursorPosition(0);
+
+			box:SetScript("OnEscapePressed", function(self)
+				self:ClearFocus();
+			end);
+
+			box:SetScript("OnEditFocusGained", function(self)
+				self:HighlightText();
+			end);
+
+			box:SetScript("OnEditFocusLost", function(self)
+				self:HighlightText(0, 0);
+				self:SetCursorPosition(0);
+			end);
+
+			return box;
+		end
+
+		local curseforgeBox = CreateReadOnlyURLBox(
+			panel,
+			"CurseForge",
+			"https://www.curseforge.com/wow/addons/easydisenchantrevamped",
+			aboutText
+		);
+
+		local githubBox = CreateReadOnlyURLBox(
+			panel,
+			"Project GitHub",
+			"https://github.com/FSchokker/EasyDisenchantRevamped",
+			curseforgeBox
+		);
+
+		local footer = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall");
+		footer:SetPoint("TOPLEFT", githubBox, "BOTTOMLEFT", 0, -14);
+		footer:SetWidth(700);
+		footer:SetJustifyH("LEFT");
+		footer:SetText("Tip: Click into a link field to highlight it for copying.");
+
+		local category = Settings.RegisterCanvasLayoutCategory(panel, self.ADDON_NAME, self.ADDON_NAME);
+		Settings.RegisterAddOnCategory(category);
+
+		self.settingsCategory = category;
+		self.settingsPanel = panel;
+		self.settingsPanelCreated = true;
+	end
+
+	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	-- Localization helpers
+	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 	_M.ApplyLocalization = function(self, locale)
 		local strings = self.Strings;
 		for key, str in pairs(locale) do
@@ -151,6 +383,10 @@ end
 		end
 	end
 
+	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	-- Item handling helpers
+	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	
 	_M.GetItemIDFromLink = function(itemLink)
 		return tonumber(string_match(itemLink, "Hitem:(%d+)"));
 	end
@@ -183,71 +419,6 @@ end
 
 		self:Print(self.BLACKLIST_ADD_ITEM:format(itemLink));
 		self:Print(self.BLACKLIST_INFO);
-	end
-
-	_M.OnLoad = function(self)
-		-- Changes:
-		-- 1. Keeps slash command setup.
-		-- 2. Initializes blacklist/settings saved variables.
-		-- 3. Migrates old blacklist entries from itemID = true to rich entry tables.
-		-- 4. Initializes minimap button settings.
-		-- 5. Creates the minimap button.
-
-		-- Register command.
-		SLASH_DISENCHANT1, SLASH_DISENCHANT2 = "/disenchant", "/de";
-		SlashCmdList["DISENCHANT"] = _M.OnCommand;
-
-		-- Create stored blacklist table if it doesn't exist.
-		if not EasyDisenchantBlacklist then
-			EasyDisenchantBlacklist = {};
-		end
-
-		-- Create stored settings table if it doesn't exist.
-		if not EasyDisenchantRevampedSettings then
-			EasyDisenchantRevampedSettings = {};
-		end
-
-		-- Store local references to our saved tables.
-		self.blacklist = EasyDisenchantBlacklist;
-		self.settings = EasyDisenchantRevampedSettings;
-
-		-- Default minimap button settings.
-		if self.settings.minimapButtonAngle == nil then
-			self.settings.minimapButtonAngle = 225;
-		end
-
-		if self.settings.disenchantViewMode == nil then
-			self.settings.disenchantViewMode = "BUTTONS";
-		end
-
-		self.disenchantViewMode = self.settings.disenchantViewMode;
-
-		-- Migrate old blacklist format:
-		-- old:  self.blacklist[itemID] = true
-		-- new:  self.blacklist[itemID] = { itemID=..., itemLink=..., itemName=..., iconFileID=..., quality=..., timeAdded=... }
-		for itemID, entry in pairs(self.blacklist) do
-			if entry == true then
-				local itemLink = select(2, GetItemInfo(itemID));
-				local itemName, _, itemQuality, _, _, _, _, _, _, itemIcon = GetItemInfo(itemID);
-
-				self.blacklist[itemID] = {
-					itemID = itemID,
-					itemLink = itemLink,
-					itemName = itemName or ("Item ID: " .. itemID),
-					iconFileID = itemIcon,
-					quality = itemQuality,
-					timeAdded = 0,
-				};
-			end
-		end
-
-		self:CreateMinimapButton();
-
-		self:SetEventHandler("UNIT_SPELLCAST_START", _M.OnUnitSpellcastStart);
-		self:SetEventHandler("UNIT_SPELLCAST_SUCCEEDED", _M.OnUnitSpellcastSucceeded);
-		self:SetEventHandler("UNIT_SPELLCAST_FAILED", _M.OnUnitSpellcastFailed);
-		self:SetEventHandler("UNIT_SPELLCAST_INTERRUPTED", _M.OnUnitSpellcastInterrupted);
-		self:SetEventHandler("BAG_UPDATE_DELAYED", _M.OnBagUpdateDelayed);
 	end
 
 	_M.GetBlacklistEntry = function(self, itemID)
@@ -368,6 +539,86 @@ end
 		end
 	end
 
+	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	-- Main functions
+	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	
+	_M.OnLoad = function(self)
+		-- Changes:
+		-- 1. Keeps slash command setup.
+		-- 2. Initializes blacklist/settings saved variables.
+		-- 3. Migrates old blacklist entries from itemID = true to rich entry tables.
+		-- 4. Initializes minimap button settings.
+		-- 5. Initializes minimap button visibility setting.
+		-- 6. Creates the minimap button only if enabled.
+		-- 7. Registers pending disenchant events.
+
+		-- Register command.
+		SLASH_DISENCHANT1, SLASH_DISENCHANT2 = "/disenchant", "/de";
+		SlashCmdList["DISENCHANT"] = _M.OnCommand;
+
+		-- Create stored blacklist table if it doesn't exist.
+		if not EasyDisenchantBlacklist then
+			EasyDisenchantBlacklist = {};
+		end
+
+		-- Create stored settings table if it doesn't exist.
+		if not EasyDisenchantRevampedSettings then
+			EasyDisenchantRevampedSettings = {};
+		end
+
+		-- Store local references to our saved tables.
+		self.blacklist = EasyDisenchantBlacklist;
+		self.settings = EasyDisenchantRevampedSettings;
+
+		-- Default minimap button settings.
+		if self.settings.minimapButtonAngle == nil then
+			self.settings.minimapButtonAngle = 225;
+		end
+
+		if self.settings.showMinimapButton == nil then
+			self.settings.showMinimapButton = true;
+		end
+
+		if self.settings.lockMinimapButton == nil then
+			self.settings.lockMinimapButton = false;
+		end
+
+		if self.settings.disenchantViewMode == nil then
+			self.settings.disenchantViewMode = "BUTTONS";
+		end
+
+		self.disenchantViewMode = self.settings.disenchantViewMode;
+
+		-- Migrate old blacklist format:
+		-- old:  self.blacklist[itemID] = true
+		-- new:  self.blacklist[itemID] = { itemID=..., itemLink=..., itemName=..., iconFileID=..., quality=..., timeAdded=... }
+		for itemID, entry in pairs(self.blacklist) do
+			if entry == true then
+				local itemLink = select(2, GetItemInfo(itemID));
+				local itemName, _, itemQuality, _, _, _, _, _, _, itemIcon = GetItemInfo(itemID);
+
+				self.blacklist[itemID] = {
+					itemID = itemID,
+					itemLink = itemLink,
+					itemName = itemName or ("Item ID: " .. itemID),
+					iconFileID = itemIcon,
+					quality = itemQuality,
+					timeAdded = 0,
+				};
+			end
+		end
+
+		self:UpdateMinimapButtonVisibility();
+		self:CreateSettingsPanel();
+
+		self:SetEventHandler("UNIT_SPELLCAST_START", _M.OnUnitSpellcastStart);
+		self:SetEventHandler("UNIT_SPELLCAST_SUCCEEDED", _M.OnUnitSpellcastSucceeded);
+		self:SetEventHandler("UNIT_SPELLCAST_FAILED", _M.OnUnitSpellcastFailed);
+		self:SetEventHandler("UNIT_SPELLCAST_INTERRUPTED", _M.OnUnitSpellcastInterrupted);
+		self:SetEventHandler("BAG_UPDATE_DELAYED", _M.OnBagUpdateDelayed);
+	end
+
 	_M.Print = function(self, message)
 		DEFAULT_CHAT_FRAME:AddMessage(self.chatFormat:format(message));
 	end
@@ -386,7 +637,6 @@ end
 	-- Disenchant Helpers
 	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	_M.ClearPendingDisenchant = function(self)
-		-- REPLACE this entire function.
 		-- Changes:
 		-- 1. Clears the pending disenchant tracking fields.
 		-- 2. Clears cast timing used by spinner/progress visuals.
@@ -404,7 +654,6 @@ end
 	end
 
 	_M.SetPendingDisenchant = function(self, bagID, slotID, itemID)
-		-- REPLACE this entire function.
 		-- Changes:
 		-- 1. Stores the currently pending disenchant target.
 		-- 2. Clears any old cast timing until UNIT_SPELLCAST_START refreshes it.
@@ -417,7 +666,6 @@ end
 	end
 
 	_M.SetPendingDisenchantCastWindow = function(self, startTimeMS, endTimeMS)
-		-- ADD this entire function.
 		-- Changes:
 		-- 1. Stores the active cast timing for spinner/progress visuals.
 		-- 2. Starts the visual updater.
@@ -433,7 +681,6 @@ end
 	end
 
 	_M.IsPendingDisenchant = function(self, bagID, slotID, itemID)
-		-- REPLACE this entire function.
 		-- Changes:
 		-- 1. Returns true when the given item matches the pending disenchant target.
 
@@ -443,7 +690,6 @@ end
 	end
 
 	_M.UpdatePendingDisenchantVisuals = function(self)
-		-- ADD this entire function.
 		-- Changes:
 		-- 1. Updates the grid spinner-style cooldown overlay.
 		-- 2. Updates the list row progress bar.
@@ -528,8 +774,11 @@ end
 		end
 	end
 
+	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	-- Event Handlers
+	--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	
 	_M.OnUnitSpellcastStart = function(self, unitTarget, castGUID, spellID)
-		-- ADD this entire function.
 		-- Changes:
 		-- 1. Captures Disenchant cast timing from the player.
 		-- 2. Starts spinner/progress visuals in sync with the cast bar.
@@ -549,7 +798,6 @@ end
 	end
 
 	_M.OnUnitSpellcastSucceeded = function(self, unitTarget, castGUID, spellID)
-		-- REPLACE this entire function.
 		-- Changes:
 		-- 1. Leaves pending state in place until BAG_UPDATE_DELAYED removes the item.
 		-- 2. Prevents early refresh before the inventory actually changes.
@@ -564,7 +812,6 @@ end
 	end
 
 	_M.OnUnitSpellcastFailed = function(self, unitTarget, castGUID, spellID)
-		-- REPLACE this entire function.
 		-- Changes:
 		-- 1. Clears pending state if Disenchant fails.
 		-- 2. Refreshes both views immediately.
@@ -582,7 +829,6 @@ end
 	end
 
 	_M.OnUnitSpellcastInterrupted = function(self, unitTarget, castGUID, spellID)
-		-- REPLACE this entire function.
 		-- Changes:
 		-- 1. Clears pending state if Disenchant is interrupted.
 		-- 2. Refreshes both views immediately.
@@ -879,7 +1125,6 @@ end
 	end
 
 	_M.GetDisenchantListRow = function(self, index)
-		-- REPLACE your entire GetDisenchantListRow() function with this version.
 		-- Changes:
 		-- 1. Keeps the subtle hover highlight.
 		-- 2. Adds a progress bar for pending disenchant.
@@ -1658,6 +1903,16 @@ end
 
 		self.disenchantFrame:SetMovable(true);
 		self.disenchantFrame:SetClampedToScreen(true);
+
+		-- Add addon icon beside the title
+		self.disenchantFrame.titleIcon = self.disenchantFrame:CreateTexture(nil, "ARTWORK");
+		self.disenchantFrame.titleIcon:SetSize(32, 32);
+		self.disenchantFrame.titleIcon:SetTexture("Interface\\AddOns\\EasyDisenchantRevamped\\Media\\icon_MiniMap_x32");
+		self.disenchantFrame.titleIcon:SetPoint("TOPLEFT", self.disenchantFrame, "TOPLEFT", 24, -28);
+
+		-- Move title slightly right so it lines up nicely with the icon
+		self.disenchantFrame.header:ClearAllPoints();
+		self.disenchantFrame.header:SetPoint("TOPLEFT", self.disenchantFrame.titleIcon, "TOPRIGHT", 8, -10);
 
 		-- Create tab buttons.
 		self.disenchantFrame.disenchantTabButton = CreateFrame("Button", "$parentDisenchantTabButton", self.disenchantFrame, "PanelTopTabButtonTemplate");
