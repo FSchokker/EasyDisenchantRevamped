@@ -270,7 +270,6 @@ do
 		subtitle:SetJustifyH("LEFT");
 		subtitle:SetText("Configuration options for Easy Disenchant Revamped.");
 
-		-- ADD THIS BLOCK: top-right logo
 		panel.logo = panel:CreateTexture(nil, "ARTWORK");
 		panel.logo:SetSize(40, 40);
 		panel.logo:SetTexture("Interface\\AddOns\\EasyDisenchantRevamped\\Media\\icon_MiniMap_x32");
@@ -550,8 +549,9 @@ do
 		-- 3. Migrates old blacklist entries from itemID = true to rich entry tables.
 		-- 4. Initializes minimap button settings.
 		-- 5. Initializes minimap button visibility setting.
-		-- 6. Creates the minimap button only if enabled.
-		-- 7. Registers pending disenchant events.
+		-- 6. Initializes sort dropdown setting.
+		-- 7. Creates the minimap button only if enabled.
+		-- 8. Registers pending disenchant events.
 
 		-- Register command.
 		SLASH_DISENCHANT1, SLASH_DISENCHANT2 = "/disenchant", "/de";
@@ -588,7 +588,12 @@ do
 			self.settings.disenchantViewMode = "BUTTONS";
 		end
 
+		if self.settings.disenchantSortMode == nil then
+			self.settings.disenchantSortMode = "BAG";
+		end
+
 		self.disenchantViewMode = self.settings.disenchantViewMode;
+		self.disenchantSortMode = self.settings.disenchantSortMode;
 
 		-- Migrate old blacklist format:
 		-- old:  self.blacklist[itemID] = true
@@ -771,6 +776,39 @@ do
 
 		if progress >= 1 and self.disenchantFrame.pendingAnimationFrame then
 			self.disenchantFrame.pendingAnimationFrame:Hide();
+		end
+	end
+
+	_M.SetDisenchantSortMode = function(self, sortMode)
+		-- Changes:
+		-- 1. Saves the selected sort mode.
+		-- 2. Updates the dropdown label text.
+		-- 3. Refreshes the item list immediately.
+		-- 4. Uses nicer user-facing labels.
+
+		if not sortMode then
+			sortMode = "BAG";
+		end
+
+		self.disenchantSortMode = sortMode;
+		self.settings.disenchantSortMode = sortMode;
+
+		if self.disenchantFrame and self.disenchantFrame.sortDropDown then
+			local labelMap = {
+				BAG = "Bag Order",
+				ITEM_LEVEL_DESC = "iLvl: High to Low",
+				ITEM_LEVEL_ASC = "iLvl: Low to High",
+				QUALITY_DESC = "Quality: High to Low",
+				QUALITY_ASC = "Quality: Low to High",
+				NAME_ASC = "Name: A to Z",
+				NAME_DESC = "Name: Z to A",
+			};
+
+			UIDropDownMenu_SetText(self.disenchantFrame.sortDropDown, labelMap[sortMode] or "Bag Order");
+		end
+
+		if self.disenchantFrame then
+			self:UpdateItems();
 		end
 	end
 
@@ -978,6 +1016,8 @@ do
 		-- Changes:
 		-- 1. Keeps the spinner overlay.
 		-- 2. Adds a tiny completion flash animation for successful disenchant.
+		-- 3. Adds item level text to the bottom-right of each grid icon.
+		-- 4. Uses an outlined font for better readability.
 
 		local buttons = self.itemButtons;
 		if buttons[index + 1] then
@@ -1020,6 +1060,13 @@ do
 		button.completeFlashAnim:SetScript("OnFinished", function()
 			button.completeFlash:Hide();
 		end);
+
+		-- Item level text
+		button.itemLevelText = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmallOutline");
+		button.itemLevelText:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2, 2);
+		button.itemLevelText:SetJustifyH("RIGHT");
+		button.itemLevelText:SetText("");
+		button.itemLevelText:SetTextColor(1, 1, 1, 1);
 
 		buttons[#buttons + 1] = button;
 		return button;
@@ -1130,6 +1177,7 @@ do
 		-- 2. Adds a progress bar for pending disenchant.
 		-- 3. Left-click marks the row pending immediately.
 		-- 4. Right-click still blacklists immediately.
+		-- 5. Adds an outlined item level label on the right side of the row.
 
 		local rows = self.disenchantListRows;
 		if rows[index] then
@@ -1164,9 +1212,16 @@ do
 		row.icon:SetSize(20, 20);
 		row.icon:SetPoint("LEFT", row, "LEFT", 4, 0);
 
+		row.itemLevelText = row:CreateFontString(nil, "ARTWORK", "GameFontNormalSmallOutline");
+		row.itemLevelText:SetPoint("RIGHT", row, "RIGHT", -6, 0);
+		row.itemLevelText:SetWidth(34);
+		row.itemLevelText:SetJustifyH("RIGHT");
+		row.itemLevelText:SetText("");
+		row.itemLevelText:SetTextColor(0.82, 0.82, 0.82, 1);
+
 		row.text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight");
 		row.text:SetPoint("LEFT", row.icon, "RIGHT", 8, 0);
-		row.text:SetPoint("RIGHT", row, "RIGHT", -4, 0);
+		row.text:SetPoint("RIGHT", row.itemLevelText, "LEFT", -8, 0);
 		row.text:SetJustifyH("LEFT");
 
 		row.progressBackground = row:CreateTexture(nil, "BORDER");
@@ -1221,6 +1276,7 @@ do
 		-- 1. Keeps the current list population logic.
 		-- 2. Shows "Disenchanting..." while a row is pending.
 		-- 3. Keeps the progress bar and muted pending styling.
+		-- 4. Shows item level on the right side of each row.
 
 		if not self.disenchantFrame or not self.disenchantFrame.disenchantListScrollFrame or not self.disenchantFrame.disenchantListScrollChild then
 			return;
@@ -1254,11 +1310,18 @@ do
 				row.icon:SetTexture([[Interface\Icons\INV_Misc_QuestionMark]]);
 			end
 
+			if entry.itemLevel and entry.itemLevel > 0 then
+				row.itemLevelText:SetText(entry.itemLevel);
+			else
+				row.itemLevelText:SetText("");
+			end
+
 			if entry.isPending then
 				row.text:SetText("Disenchanting...");
 				row.pendingShade:Show();
 				row.icon:SetDesaturated(true);
 				row.text:SetTextColor(0.78, 0.78, 0.78, 1);
+				row.itemLevelText:SetTextColor(0.78, 0.78, 0.78, 1);
 				row.progressBackground:Show();
 			else
 				if entry.link then
@@ -1270,6 +1333,7 @@ do
 				row.pendingShade:Hide();
 				row.icon:SetDesaturated(false);
 				row.text:SetTextColor(1, 1, 1, 1);
+				row.itemLevelText:SetTextColor(0.82, 0.82, 0.82, 1);
 				row.progressBackground:Hide();
 				row.progressBar:Hide();
 				row.progressBar:SetValue(0);
@@ -1287,12 +1351,64 @@ do
 		self:UpdatePendingDisenchantVisuals();
 	end
 
+	_M.SortDisenchantEntries = function(self, entries)
+		-- Changes:
+		-- 1. Sorts scanned entries before they are rendered into grid/list views.
+		-- 2. Supports bag order, item level, quality, and name sorting.
+		-- 3. Falls back to bag/slot for stable ordering.
+
+		local sortMode = self.disenchantSortMode or "BAG";
+
+		table.sort(entries, function(a, b)
+			if sortMode == "ITEM_LEVEL_DESC" then
+				if (a.itemLevel or 0) ~= (b.itemLevel or 0) then
+					return (a.itemLevel or 0) > (b.itemLevel or 0);
+				end
+			elseif sortMode == "ITEM_LEVEL_ASC" then
+				if (a.itemLevel or 0) ~= (b.itemLevel or 0) then
+					return (a.itemLevel or 0) < (b.itemLevel or 0);
+				end
+			elseif sortMode == "QUALITY_DESC" then
+				if (a.quality or 0) ~= (b.quality or 0) then
+					return (a.quality or 0) > (b.quality or 0);
+				end
+			elseif sortMode == "QUALITY_ASC" then
+				if (a.quality or 0) ~= (b.quality or 0) then
+					return (a.quality or 0) < (b.quality or 0);
+				end
+			elseif sortMode == "NAME_ASC" then
+				local aName = a.itemName or "";
+				local bName = b.itemName or "";
+
+				if aName ~= bName then
+					return aName < bName;
+				end
+			elseif sortMode == "NAME_DESC" then
+				local aName = a.itemName or "";
+				local bName = b.itemName or "";
+
+				if aName ~= bName then
+					return aName > bName;
+				end
+			end
+
+			-- Stable fallback: bag then slot
+			if a.bagID ~= b.bagID then
+				return a.bagID < b.bagID;
+			end
+
+			return a.slotID < b.slotID;
+		end);
+
+		return entries;
+	end
+
 	_M.UpdateItems = function(self)
 		-- Changes:
-		-- 1. Keeps the current scan/filter logic.
-		-- 2. Marks pending grid buttons visually while disenchant is in progress.
-		-- 3. Passes pending state into the list view rows.
-		-- 4. Still refreshes both views from the same scan.
+		-- 1. Scans all valid disenchantable items first.
+		-- 2. Stores sort metadata (item level, quality, item name).
+		-- 3. Sorts entries using the selected sort mode.
+		-- 4. Builds both grid and list views from the same sorted results.
 
 		local buttons = self.itemButtons;
 		local nButtons = #buttons;
@@ -1306,8 +1422,7 @@ do
 
 		self:ResetEquipmentManagerCache();
 
-		local useButton = 0;
-		local listEntries = {};
+		local scannedEntries = {};
 
 		for bagID = 0, NUM_BAG_SLOTS do
 			local numSlots = C_Container.GetContainerNumSlots(bagID);
@@ -1333,37 +1448,11 @@ do
 								local isEquippable = (itemEquipLoc ~= nil and itemEquipLoc ~= "");
 
 								if isEquippable and (isWeapon or isArmor or isProfessionItem) then
+									local currentItemLevel = C_Item.GetDetailedItemLevelInfo(item.hyperlink) or 0;
 									local macrotext = format(macroFormat, disenchantName, bagID, slotID);
 									local isPending = self:IsPendingDisenchant(bagID, slotID, itemID);
 
-									local button = self:GetItemButton(useButton);
-
-									SetItemButtonTexture(button, item.iconFileID);
-									SetItemButtonQuality(button, item.quality, item.hyperlink);
-
-									button:SetAttribute("type", "macro");
-									button:SetAttribute("macrotext", macrotext);
-
-									button.link = item.hyperlink;
-									button.itemID = itemID;
-									button.bagID = bagID;
-									button.slotID = slotID;
-
-									if isPending then
-										button:SetAlpha(0.70);
-										if button.pendingShade then
-											button.pendingShade:Show();
-										end
-									else
-										button:SetAlpha(1);
-										if button.pendingShade then
-											button.pendingShade:Hide();
-										end
-									end
-
-									button:Show();
-
-									listEntries[#listEntries + 1] = {
+									scannedEntries[#scannedEntries + 1] = {
 										itemID = itemID,
 										link = item.hyperlink,
 										iconFileID = item.iconFileID,
@@ -1371,20 +1460,67 @@ do
 										bagID = bagID,
 										slotID = slotID,
 										isPending = isPending,
+										itemLevel = currentItemLevel,
+										quality = item.quality,
+										itemName = itemName,
 									};
-
-									useButton = useButton + 1;
-
-									if useButton >= self.maxButtons then
-										self:UpdateWindowHeight(useButton);
-										self:UpdateDisenchantListRows(listEntries);
-										return;
-									end
 								end
 							end
 						end
 					end
 				end
+			end
+		end
+
+		self:SortDisenchantEntries(scannedEntries);
+
+		local useButton = 0;
+		local listEntries = {};
+
+		for i = 1, #scannedEntries do
+			local entry = scannedEntries[i];
+
+			local button = self:GetItemButton(useButton);
+
+			SetItemButtonTexture(button, entry.iconFileID);
+			SetItemButtonQuality(button, entry.quality, entry.link);
+
+			button:SetAttribute("type", "macro");
+			button:SetAttribute("macrotext", entry.macrotext);
+
+			button.link = entry.link;
+			button.itemID = entry.itemID;
+			button.bagID = entry.bagID;
+			button.slotID = entry.slotID;
+
+			if entry.itemLevel and entry.itemLevel > 0 then
+				button.itemLevelText:SetText(entry.itemLevel);
+			else
+				button.itemLevelText:SetText("");
+			end
+
+			if entry.isPending then
+				button:SetAlpha(0.70);
+				if button.pendingShade then
+					button.pendingShade:Show();
+				end
+			else
+				button:SetAlpha(1);
+				if button.pendingShade then
+					button.pendingShade:Hide();
+				end
+			end
+
+			button:Show();
+
+			listEntries[#listEntries + 1] = entry;
+
+			useButton = useButton + 1;
+
+			if useButton >= self.maxButtons then
+				self:UpdateWindowHeight(useButton);
+				self:UpdateDisenchantListRows(listEntries);
+				return;
 			end
 		end
 
@@ -1720,20 +1856,9 @@ do
 
 	_M.CreateDisenchantFrame = function(self)
 		-- Changes:
-		-- 1. 	Makes the window movable.
-		-- 2. 	Saves position when dragging stops.
-		-- 3. 	Restores saved position after creation.
-		-- 4. 	Registers the frame for closing with Escape.
-		-- 5. 	Clamps the frame to the screen.
-		-- 6. 	Adds a scroll frame + scroll child for item buttons.
-		-- 7. 	Keeps the window movable / remembered / Escape-close behavior.
-		-- 8. 	Uses a minimum starting height and allows growth later.
-		-- 9. 	Enables mouse wheel scrolling.
-		-- 10. 	Adds two tab buttons: Disenchant and Blacklist.
-		-- 11. 	Creates both content regions up front and toggles them with hide/show.
-		-- 12. 	Moves the existing disenchant scroll area into disenchantContent.
-		-- 13. 	Adds blacklist header text with count support.
-		-- 14. 	Adds the empty-state message: "No blacklisted items."
+		-- 1. Creates the grid/list buttons before anchoring the sort controls to them.
+		-- 2. Keeps your title icon, tabs, scroll frames, and view toggle icons.
+		-- 3. Keeps the saved sort mode initialization.
 
 		local bgAnchor = {
 			{ point = "TOPLEFT", x = 8, y = -8 },
@@ -1916,7 +2041,7 @@ do
 
 		-- Create tab buttons.
 		self.disenchantFrame.disenchantTabButton = CreateFrame("Button", "$parentDisenchantTabButton", self.disenchantFrame, "PanelTopTabButtonTemplate");
-		self.disenchantFrame.disenchantTabButton:SetID(1)
+		self.disenchantFrame.disenchantTabButton:SetID(1);
 		self.disenchantFrame.disenchantTabButton:SetText("Disenchant");
 		PanelTemplates_TabResize(self.disenchantFrame.disenchantTabButton, 20);
 		self.disenchantFrame.disenchantTabButton:SetPoint("TOPLEFT", self.disenchantFrame, "TOPLEFT", 24, -56);
@@ -1925,7 +2050,7 @@ do
 		end);
 
 		self.disenchantFrame.blacklistTabButton = CreateFrame("Button", "$parentBlacklistTabButton", self.disenchantFrame, "PanelTopTabButtonTemplate");
-		self.disenchantFrame.blacklistTabButton:SetID(2)
+		self.disenchantFrame.blacklistTabButton:SetID(2);
 		self.disenchantFrame.blacklistTabButton:SetText("Blacklist");
 		PanelTemplates_TabResize(self.disenchantFrame.blacklistTabButton, 20);
 		self.disenchantFrame.blacklistTabButton:SetPoint("TOPLEFT", self.disenchantFrame.disenchantTabButton, "TOPRIGHT", 8, 0);
@@ -1992,8 +2117,8 @@ do
 		end);
 
 		self.disenchantFrame.scrollFrame.scrollChild = self.disenchantFrame.scrollChild;
-		
-		-- Disenchant view toggle buttons
+
+		-- Disenchant controls (view buttons first, then sort controls)
 		local mediaPath = "Interface\\AddOns\\EasyDisenchantRevamped\\Media\\";
 
 		self.disenchantFrame.disenchantButtonViewButton = CreateFrame("Button", "$parentDisenchantButtonViewButton", self.disenchantFrame.disenchantContent);
@@ -2041,6 +2166,72 @@ do
 				button.icon:SetTexture(mediaPath .. "Icons_ListView_Inactive_x32");
 			end
 		end);
+
+		self.disenchantFrame.sortLabel = self.disenchantFrame.disenchantContent:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall");
+		self.disenchantFrame.sortLabel:SetPoint("RIGHT", self.disenchantFrame.disenchantListViewButton, "LEFT", -170, 0);
+		self.disenchantFrame.sortLabel:SetText("Sort By:");
+
+		self.disenchantFrame.sortDropDown = CreateFrame("Frame", "$parentSortDropDown", self.disenchantFrame.disenchantContent, "UIDropDownMenuTemplate");
+		self.disenchantFrame.sortDropDown:SetPoint("LEFT", self.disenchantFrame.sortLabel, "RIGHT", -12, -2);
+		UIDropDownMenu_SetWidth(self.disenchantFrame.sortDropDown, 135);
+		UIDropDownMenu_SetText(self.disenchantFrame.sortDropDown, "Bag Order");
+
+		self.disenchantFrame.sortDropDown:SetScript("OnEnter", function()
+			GameTooltip:SetOwner(self.disenchantFrame.sortDropDown, "ANCHOR_TOP");
+			GameTooltip:SetText("Sort Items");
+			GameTooltip:AddLine("Choose how disenchantable items are ordered.", 1, 1, 1, true);
+			GameTooltip:Show();
+		end);
+
+		self.disenchantFrame.sortDropDown:SetScript("OnLeave", function()
+			GameTooltip:Hide();
+		end);
+
+		UIDropDownMenu_Initialize(self.disenchantFrame.sortDropDown, function(dropdown, level)
+			local info = UIDropDownMenu_CreateInfo();
+
+			info.func = function(buttonSelf)
+				_M:SetDisenchantSortMode(buttonSelf.value);
+			end
+
+			info.text = "Bag Order";
+			info.value = "BAG";
+			info.checked = (_M.disenchantSortMode == "BAG");
+			UIDropDownMenu_AddButton(info, level);
+
+			info.text = "iLvl: High to Low";
+			info.value = "ITEM_LEVEL_DESC";
+			info.checked = (_M.disenchantSortMode == "ITEM_LEVEL_DESC");
+			UIDropDownMenu_AddButton(info, level);
+
+			info.text = "iLvl: Low to High";
+			info.value = "ITEM_LEVEL_ASC";
+			info.checked = (_M.disenchantSortMode == "ITEM_LEVEL_ASC");
+			UIDropDownMenu_AddButton(info, level);
+
+			info.text = "Quality: High to Low";
+			info.value = "QUALITY_DESC";
+			info.checked = (_M.disenchantSortMode == "QUALITY_DESC");
+			UIDropDownMenu_AddButton(info, level);
+
+			info.text = "Quality: Low to High";
+			info.value = "QUALITY_ASC";
+			info.checked = (_M.disenchantSortMode == "QUALITY_ASC");
+			UIDropDownMenu_AddButton(info, level);
+
+			info.text = "Name: A to Z";
+			info.value = "NAME_ASC";
+			info.checked = (_M.disenchantSortMode == "NAME_ASC");
+			UIDropDownMenu_AddButton(info, level);
+
+			info.text = "Name: Z to A";
+			info.value = "NAME_DESC";
+			info.checked = (_M.disenchantSortMode == "NAME_DESC");
+			UIDropDownMenu_AddButton(info, level);
+		end);
+
+		-- Initialize dropdown text from saved sort mode.
+		self:SetDisenchantSortMode(self.disenchantSortMode or "BAG");
 
 		self.disenchantFrame.disenchantListContent = CreateFrame("FRAME", "$parentDisenchantListContent", self.disenchantFrame.disenchantContent);
 		self.disenchantFrame.disenchantListContent:SetPoint("TOPLEFT", self.disenchantFrame.disenchantContent, "TOPLEFT", 20, -30);
@@ -2096,7 +2287,7 @@ do
 			scrollFrame:SetVerticalScroll(newScroll);
 		end);
 
-		self.disenchantFrame.blacklistScrollFrame.blacklistScrollChild = self.disenchantFrame.blacklistScrollChild;		
+		self.disenchantFrame.blacklistScrollFrame.blacklistScrollChild = self.disenchantFrame.blacklistScrollChild;
 
 		self.disenchantFrame.pendingAnimationFrame = CreateFrame("Frame", nil, self.disenchantFrame);
 		self.disenchantFrame.pendingAnimationFrame:Hide();
