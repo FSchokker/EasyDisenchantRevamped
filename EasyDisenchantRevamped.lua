@@ -785,6 +785,7 @@ do
 		-- 2. Updates the dropdown label text.
 		-- 3. Refreshes the item list immediately.
 		-- 4. Uses nicer user-facing labels.
+		-- 5. Keeps the dropdown's selected value in sync with saved settings.
 
 		if not sortMode then
 			sortMode = "BAG";
@@ -804,6 +805,7 @@ do
 				NAME_DESC = "Name: Z to A",
 			};
 
+			UIDropDownMenu_SetSelectedValue(self.disenchantFrame.sortDropDown, sortMode);
 			UIDropDownMenu_SetText(self.disenchantFrame.sortDropDown, labelMap[sortMode] or "Bag Order");
 		end
 
@@ -2167,6 +2169,7 @@ do
 			end
 		end);
 
+		-- Replaced: restoring the original sort label/dropdown position.
 		self.disenchantFrame.sortLabel = self.disenchantFrame.disenchantContent:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall");
 		self.disenchantFrame.sortLabel:SetPoint("RIGHT", self.disenchantFrame.disenchantListViewButton, "LEFT", -170, 0);
 		self.disenchantFrame.sortLabel:SetText("Sort By:");
@@ -2192,7 +2195,7 @@ do
 
 			info.func = function(buttonSelf)
 				_M:SetDisenchantSortMode(buttonSelf.value);
-			end
+			end;
 
 			info.text = "Bag Order";
 			info.value = "BAG";
