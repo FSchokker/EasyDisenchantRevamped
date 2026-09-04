@@ -71,7 +71,7 @@ do
 		end
 
 		local angle = self.settings.minimapButtonAngle or 225;
-		local radius = 80;
+		local radius = 105;
 
 		local x = math.cos(math.rad(angle)) * radius;
 		local y = math.sin(math.rad(angle)) * radius;
