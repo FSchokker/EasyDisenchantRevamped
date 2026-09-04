@@ -1926,7 +1926,11 @@ do
 						}
 					},
 					scripts = {
-						OnUpdate = function(self, elapsed) AnimateTexCoords(self.ants, 256, 256, 48, 48, 22, elapsed, 0.01); end
+						OnUpdate = function(self, elapsed)
+							if not self == nil then
+								AnimateTexCoords(self.ants, 256, 256, 48, 48, 22, elapsed, 0.01);
+							end;
+						end
 					}
 				}
 			},
